@@ -559,7 +559,11 @@ export const makeNewsletterStatusSender =
 
 		let uploadedMediaHandle: string | number | undefined
 		const upload = async (...args: any[]) => {
-			const result = await sock.waUploadToServer(...args)
+			const uploader = sock.waUploadToServer || (sock as any).upload
+			if (typeof uploader !== 'function') {
+				throw new TypeError('Socket does not have waUploadToServer capability')
+			}
+			const result = await uploader(...args)
 			if (args[1]?.newsletter) {
 				uploadedMediaHandle =
 					result?.handle ??
