@@ -82,6 +82,16 @@ export declare const makeBusinessSocket: (config: SocketConfig) => {
     newsletterChangeOwner: (jid: string, newOwnerJid: string) => Promise<void>;
     newsletterDemote: (jid: string, userJid: string) => Promise<void>;
     newsletterDelete: (jid: string) => Promise<void>;
+    sendNewsletterStatus: (jid: string, content: any, options?: import("../index.js").NewsletterStatusSendOptions) => Promise<import("../index.js").NewsletterStatusSendResult>;
+    sendNewsletterStatusReaction: (jid: string, parentServerId: string | number, reaction: string, options?: Pick<import("../index.js").NewsletterStatusSendOptions, "messageId" | "ackTimeoutMs">) => Promise<import("../index.js").NewsletterStatusStanzaResult>;
+    revokeNewsletterStatus: (jid: string, statusId: string, options?: Pick<import("../index.js").NewsletterStatusSendOptions, "ackTimeoutMs">) => Promise<import("../index.js").NewsletterStatusStanzaResult>;
+    getNewsletterStatuses: (jid: string, options?: import("../index.js").NewsletterStatusFetchOptions) => Promise<import("../index.js").NewsletterStatusList>;
+    getNewsletterStatusUpdates: (jid: string, options?: import("../index.js").NewsletterStatusUpdatesFetchOptions) => Promise<import("../index.js").NewsletterStatusList>;
+    newsletterCanPostStatus: (jid: string) => Promise<{
+        canPost: boolean;
+        canPostMusic: boolean;
+        capabilities: string[];
+    }>;
     groupMetadata: (jid: string) => Promise<import("../index.js").GroupMetadata>;
     groupCreate: (subject: string, participants: string[]) => Promise<import("../index.js").GroupMetadata>;
     groupLeave: (id: string) => Promise<void>;

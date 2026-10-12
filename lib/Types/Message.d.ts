@@ -318,12 +318,16 @@ export type WAMediaUploadFunction = (encFilePath: string, opts: {
     fileEncSha256B64: string;
     mediaType: MediaType;
     timeoutMs?: number;
+    newsletter?: boolean;
 }) => Promise<{
     mediaUrl: string;
     directPath: string;
     meta_hmac?: string;
     ts?: number;
     fbid?: number;
+    handle?: string;
+    thumbnailDirectPath?: string;
+    thumbnailSha256?: Buffer | Uint8Array;
 }>;
 export type MediaGenerationOptions = {
     logger?: ILogger;

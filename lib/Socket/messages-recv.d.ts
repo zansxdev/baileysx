@@ -68,6 +68,16 @@ export declare const makeMessagesRecvSocket: (config: SocketConfig) => {
     newsletterChangeOwner: (jid: string, newOwnerJid: string) => Promise<void>;
     newsletterDemote: (jid: string, userJid: string) => Promise<void>;
     newsletterDelete: (jid: string) => Promise<void>;
+    sendNewsletterStatus: (jid: string, content: any, options?: import("../Utils/index.js").NewsletterStatusSendOptions) => Promise<import("../Utils/index.js").NewsletterStatusSendResult>;
+    sendNewsletterStatusReaction: (jid: string, parentServerId: string | number, reaction: string, options?: Pick<import("../Utils/index.js").NewsletterStatusSendOptions, "messageId" | "ackTimeoutMs">) => Promise<import("../Utils/index.js").NewsletterStatusStanzaResult>;
+    revokeNewsletterStatus: (jid: string, statusId: string, options?: Pick<import("../Utils/index.js").NewsletterStatusSendOptions, "ackTimeoutMs">) => Promise<import("../Utils/index.js").NewsletterStatusStanzaResult>;
+    getNewsletterStatuses: (jid: string, options?: import("../Utils/index.js").NewsletterStatusFetchOptions) => Promise<import("../Utils/index.js").NewsletterStatusList>;
+    getNewsletterStatusUpdates: (jid: string, options?: import("../Utils/index.js").NewsletterStatusUpdatesFetchOptions) => Promise<import("../Utils/index.js").NewsletterStatusList>;
+    newsletterCanPostStatus: (jid: string) => Promise<{
+        canPost: boolean;
+        canPostMusic: boolean;
+        capabilities: string[];
+    }>;
     groupMetadata: (jid: string) => Promise<import("../Types/index.js").GroupMetadata>;
     groupCreate: (subject: string, participants: string[]) => Promise<import("../Types/index.js").GroupMetadata>;
     groupLeave: (id: string) => Promise<void>;

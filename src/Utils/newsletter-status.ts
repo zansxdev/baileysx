@@ -1,0 +1,851 @@
+import { proto } from '../../WAProto/index.js'
+import { WAMessageStatus } from '../Types'
+import type { SocketConfig } from '../Types'
+import { type BinaryNode, getBinaryNodeChild, getBinaryNodeChildren, S_WHATSAPP_NET } from '../WABinary'
+import { isJidNewsletter } from '../WABinary/jid-utils'
+import { encodeNewsletterMessage, generateMessageIDV2 } from './generics'
+import { generateWAMessage, normalizeMessageContent } from './messages'
+
+export type NewsletterStatusMediaType = 'audio' | 'gif' | 'image' | 'video'
+export type NewsletterStatusInteractionType = 'question' | 'question_response' | 'question_reshare'
+export type NewsletterStatusContentType = 'text' | 'media' | 'reaction'
+
+export interface NewsletterStatusSendOptions {
+	messageId?: string
+	mediaHandle?: string | number
+	mediaId?: string | number
+	parentServerId?: string | number
+	responseServerId?: string | number
+	interactionType?: NewsletterStatusInteractionType
+	aiContent?: boolean
+	statusAttribution?: boolean
+	ackTimeoutMs?: number
+	resolveServerId?: boolean
+	serverIdTimeoutMs?: number
+	transport?: string
+	[key: string]: any
+}
+
+export interface NewsletterStatusNodeInput {
+	jid: string
+	message?: proto.IMessage
+	payload?: Uint8Array
+	messageId: string
+	mediaType?: NewsletterStatusMediaType
+	mediaHandle?: string | number
+	mediaId?: string | number
+	parentServerId?: string | number
+	responseServerId?: string | number
+	interactionType?: NewsletterStatusInteractionType
+	aiContent?: boolean
+}
+
+export interface NewsletterStatusReactionNodeInput {
+	jid: string
+	messageId: string
+	parentServerId: string | number
+	reaction?: string
+}
+
+export interface NewsletterStatusRevokeNodeInput {
+	jid: string
+	statusId: string
+}
+
+export interface NewsletterStatusAck {
+	class?: string
+	from?: string
+	id?: string
+	t?: number
+	serverId?: number
+	edit?: string
+	error?: string
+	applicationError?: number
+	backoff?: number
+	node: any
+}
+
+export interface NewsletterStatusFetchOptions {
+	count?: number
+	before?: string | number
+	after?: string | number
+	viewRole?: string
+}
+
+export interface NewsletterAdminProfileInfo {
+	id?: string
+	name?: string
+	pictureId?: string
+	pictureDirectPath?: string
+}
+
+export interface NewsletterStatusEntry {
+	id?: string
+	serverId?: number
+	t?: number
+	isSender: boolean
+	type?: string
+	edit?: string
+	mediaType?: NewsletterStatusMediaType
+	interactionType?: NewsletterStatusInteractionType
+	reaction?: string
+	adminProfile?: NewsletterAdminProfileInfo
+	paidPartnership: boolean
+	aiContent: boolean
+	editTimestamp?: number
+	originalTimestamp?: number
+	reactionCounts?: { code?: string; count?: number }[]
+	viewsCount?: number
+	responsesCount?: number
+	message?: proto.IMessage
+	node: any
+}
+
+export interface NewsletterStatusUpdatesFetchOptions {
+	count?: number
+	since?: number
+	before?: string | number
+	after?: string | number
+}
+
+export interface NewsletterStatusList {
+	jid?: string
+	t?: number
+	statuses: NewsletterStatusEntry[]
+}
+
+export type NewsletterStatusSendResult = proto.WebMessageInfo & {
+	newsletterStatusServerId?: number
+	newsletterStatusAck?: NewsletterStatusAck
+	newsletterStatusResponse?: any
+	newsletterStatusDelivered?: any
+}
+
+export interface NewsletterStatusStanzaResult {
+	key: {
+		remoteJid: string
+		fromMe: true
+		id: string
+	}
+	status: number
+	newsletterStatusServerId?: number
+	newsletterStatusAck?: NewsletterStatusAck
+	newsletterStatusResponse?: any
+}
+
+export const NEWSLETTER_STATUS_MEDIA_TYPES = new Set<NewsletterStatusMediaType>(['audio', 'gif', 'image', 'video'])
+export const NEWSLETTER_STATUS_WEB_MEDIA_TYPES = new Set<NewsletterStatusMediaType>(['image', 'video'])
+export const NEWSLETTER_STATUS_INTERACTIONS = new Set<NewsletterStatusInteractionType>([
+	'question',
+	'question_response',
+	'question_reshare'
+])
+export const NEWSLETTER_STATUS_CONTENT_TYPES = new Set<NewsletterStatusContentType>(['text', 'media', 'reaction'])
+export const NEWSLETTER_STATUS_CALLBACK_EVENTS = ['CB:ack', 'CB:status', 'CB:iq', 'CB:notification', 'CB:message']
+export const NEWSLETTER_STATUS_EDIT_REACTION_REVOKE = '7'
+export const NEWSLETTER_STATUS_EDIT_ADMIN_REVOKE = '8'
+export const NEWSLETTER_STATUS_ACK_CLASS = 'status'
+export const NEWSLETTER_STATUS_ACK_TIMEOUT_MS = 20000
+export const NEWSLETTER_STATUS_SERVER_ID_TIMEOUT_MS = 8000
+export const NEWSLETTER_SERVER_ID_MIN = 99
+export const NEWSLETTER_SERVER_ID_MAX = 2147476647
+
+export const getNewsletterStatusMediaType = (
+	message: proto.IMessage | null | undefined
+): NewsletterStatusMediaType | undefined => {
+	const content = normalizeMessageContent(message)
+	if (content?.imageMessage) return 'image'
+	if (content?.videoMessage) return content.videoMessage.gifPlayback ? 'gif' : 'video'
+	if (content?.audioMessage) return 'audio'
+	return undefined
+}
+
+const assertNewsletterJid = (jid: string) => {
+	if (!isJidNewsletter(jid)) throw new TypeError('Newsletter status target must be a @newsletter JID')
+}
+
+const assertInteraction = (interactionType?: string) => {
+	if (interactionType !== undefined && !NEWSLETTER_STATUS_INTERACTIONS.has(interactionType as any)) {
+		throw new TypeError(`Unsupported newsletter status interaction: ${interactionType}`)
+	}
+}
+
+const assertMediaType = (mediaType?: string) => {
+	if (mediaType !== undefined && !NEWSLETTER_STATUS_MEDIA_TYPES.has(mediaType as any)) {
+		throw new TypeError(`Unsupported newsletter status media type: ${mediaType}`)
+	}
+}
+
+const isPresent = (value: any) => value !== undefined && value !== null && value !== ''
+
+export const toNewsletterServerId = (value: string | number, label?: string) => {
+	const parsed = typeof value === 'number' ? value : Number(String(value).trim())
+	if (!Number.isInteger(parsed) || parsed < NEWSLETTER_SERVER_ID_MIN || parsed > NEWSLETTER_SERVER_ID_MAX) {
+		throw new TypeError(
+			`${JSON.stringify(value)} is not a newsletter server id${label ? ` for ${label}` : ''}; the server accepts ${NEWSLETTER_SERVER_ID_MIN}..${NEWSLETTER_SERVER_ID_MAX}, and you get one from newsletterFetchMessages or a sent status`
+		)
+	}
+	return String(parsed)
+}
+
+const toServerId = (value: string | number, label?: string) => toNewsletterServerId(value, label)
+
+const buildMetaNode = ({
+	interactionType,
+	parentServerId,
+	responseServerId,
+	aiContent
+}: {
+	interactionType?: NewsletterStatusInteractionType
+	parentServerId?: string | number
+	responseServerId?: string | number
+	aiContent?: boolean
+}): BinaryNode | undefined => {
+	assertInteraction(interactionType)
+
+	const attrs: Record<string, string> = {}
+	if (interactionType) {
+		attrs.interaction_type = interactionType
+		if (interactionType === 'question_reshare') {
+			if (!isPresent(parentServerId)) throw new TypeError('question_reshare requires parentServerId')
+			if (!isPresent(responseServerId)) throw new TypeError('question_reshare requires responseServerId')
+			attrs.parent_server_id = toServerId(parentServerId!, 'parentServerId')
+			attrs.response_server_id = String(responseServerId)
+		} else if (interactionType === 'question_response' && isPresent(responseServerId)) {
+			attrs.response_server_id = String(responseServerId)
+		}
+	}
+
+	if (!interactionType && !aiContent) return undefined
+
+	return {
+		tag: 'meta',
+		attrs,
+		content: aiContent ? [{ tag: 'ai_content', attrs: {}, content: undefined }] : undefined
+	}
+}
+
+export const withNewsletterStatusAttribution = <T extends Record<string, any>>(content: T): T => ({
+	...content,
+	contextInfo: {
+		statusAttributions: [{ type: (proto as any).StatusAttribution?.Type?.NEWSLETTER_STATUS ?? 9 }],
+		featureEligibilities: { canBeReshared: true },
+		...(content?.contextInfo || {})
+	}
+})
+
+const snapshotCallbackNode = (event: string, node: any) => ({
+	event,
+	tag: node?.tag,
+	attrs: node?.attrs || {},
+	children: Array.isArray(node?.content)
+		? node.content.map((child: any) => ({ tag: child?.tag, attrs: child?.attrs || {} }))
+		: []
+})
+
+const collectStatusCallbacks = (sock: any) => {
+	const frames: any[] = []
+	const listeners: [string, (node: any) => void][] = []
+
+	for (const event of NEWSLETTER_STATUS_CALLBACK_EVENTS) {
+		const listener = (node: any) => {
+			if (frames.length >= 40) return
+			frames.push(snapshotCallbackNode(event, node))
+		}
+		sock.ws.on(event, listener)
+		listeners.push([event, listener])
+	}
+
+	return {
+		frames,
+		stop: () => {
+			for (const [event, listener] of listeners) {
+				sock.ws.off(event, listener)
+			}
+		}
+	}
+}
+
+const readIntAttr = (attrs: any, key: string): number | undefined => {
+	if (!isPresent(attrs?.[key])) return undefined
+	const parsed = Number.parseInt(String(attrs[key]), 10)
+	return Number.isFinite(parsed) ? parsed : undefined
+}
+
+export const parseNewsletterStatusAck = (
+	node: any,
+	{ jid, messageId }: { jid?: string; messageId?: string } = {}
+): NewsletterStatusAck => {
+	if (!node || typeof node !== 'object') throw new TypeError('Newsletter status ack node is required')
+	if (node.tag !== 'ack') {
+		const error: any = new Error(`Newsletter status expected <ack>, got <${node.tag}>`)
+		error.data = node
+		throw error
+	}
+
+	const attrs = node.attrs || {}
+	if (attrs.class !== undefined && attrs.class !== NEWSLETTER_STATUS_ACK_CLASS) {
+		const error: any = new Error(
+			`Newsletter status ack has class "${attrs.class}", expected "${NEWSLETTER_STATUS_ACK_CLASS}"`
+		)
+		error.data = node
+		throw error
+	}
+	if (isPresent(messageId) && isPresent(attrs.id) && attrs.id !== messageId) {
+		const error: any = new Error(`Newsletter status ack id mismatch: ${attrs.id} != ${messageId}`)
+		error.data = node
+		throw error
+	}
+	if (isPresent(jid) && isPresent(attrs.from) && attrs.from !== jid) {
+		const error: any = new Error(`Newsletter status ack from mismatch: ${attrs.from} != ${jid}`)
+		error.data = node
+		throw error
+	}
+
+	return {
+		class: attrs.class,
+		from: attrs.from,
+		id: attrs.id,
+		t: readIntAttr(attrs, 't'),
+		serverId: readIntAttr(attrs, 'server_id'),
+		edit: attrs.edit,
+		error: isPresent(attrs.error) ? String(attrs.error) : undefined,
+		applicationError: readIntAttr(attrs, 'application_error'),
+		backoff: readIntAttr(attrs, 'backoff'),
+		node
+	}
+}
+
+export const waitForNewsletterStatusServerId = (
+	sock: any,
+	{ jid, messageId, timeoutMs = 8000 }: { jid?: string; messageId?: string; timeoutMs?: number }
+): Promise<{ serverId: number; node: any } | undefined> & { cancel(): void } => {
+	let settle: (val: any) => void
+	const promise = new Promise<{ serverId: number; node: any } | undefined>(resolve => {
+		let done = false
+		const finish = (value: any) => {
+			if (done) return
+			done = true
+			clearTimeout(timer)
+			sock.ws.off('CB:status', onStatus)
+			resolve(value)
+		}
+		const onStatus = (node: any) => {
+			if (node?.tag !== 'status') return
+			const attrs = node.attrs || {}
+			if (isPresent(jid) && isPresent(attrs.from) && attrs.from !== jid) return
+			if (isPresent(messageId) && isPresent(attrs.id) && attrs.id !== messageId) return
+			const serverId = readIntAttr(attrs, 'server_id')
+			if (serverId !== undefined) finish({ serverId, node })
+		}
+		const timer = setTimeout(() => finish(undefined), timeoutMs)
+		sock.ws.on('CB:status', onStatus)
+		settle = finish
+	}) as Promise<{ serverId: number; node: any } | undefined> & { cancel(): void }
+	promise.cancel = () => settle(undefined)
+	return promise
+}
+
+const assertStatusServerResponse = (
+	response: any,
+	{ jid, messageId, callbacks = [] }: { jid: string; messageId: string; callbacks?: any[] }
+): NewsletterStatusAck => {
+	if (!response) {
+		const suffix = callbacks.length
+			? `; callbacks=${JSON.stringify(callbacks)}`
+			: '; no ack/status/iq/notification/message callback observed'
+		const error: any = new Error(`Newsletter status server ACK timed out for ${messageId}${suffix}`)
+		error.data = { messageId, callbacks }
+		throw error
+	}
+
+	const ack = parseNewsletterStatusAck(response, { jid, messageId })
+	if (ack.error) {
+		const details = [
+			ack.applicationError !== undefined ? `application_error=${ack.applicationError}` : undefined,
+			ack.backoff !== undefined ? `backoff=${ack.backoff}` : undefined
+		]
+			.filter(Boolean)
+			.join(', ')
+		const hint =
+			ack.error === '403' || ack.error === '401' || ack.error === 'not-authorized' || ack.error === 'forbidden'
+				? '; the channel may be missing the CHANNEL_STATUS_PRODUCER capability, check newsletterCanPostStatus(jid)'
+				: ''
+		const error: any = new Error(
+			`Newsletter status rejected by server (${ack.error})${details ? `: ${details}` : ''}${hint}`
+		)
+		error.data = ack
+		throw error
+	}
+
+	return ack
+}
+
+export const buildNewsletterAdminProfileStatusMessage = (message: proto.IMessage) => {
+	if (!message || typeof message !== 'object') throw new TypeError('Newsletter status message is required')
+	return proto.Message.create({
+		newsletterAdminProfileStatusMessage: proto.Message.FutureProofMessage.create({
+			message
+		})
+	})
+}
+
+const resolveStatusPayload = ({ message, payload }: { message?: proto.IMessage; payload?: Uint8Array }): Uint8Array => {
+	if (payload !== undefined) {
+		if (!(payload instanceof Uint8Array)) throw new TypeError('Newsletter status payload must be a Uint8Array')
+		return payload
+	}
+	if (!message || typeof message !== 'object') throw new TypeError('Newsletter status message is required')
+	return encodeNewsletterMessage(message)
+}
+
+export const buildNewsletterStatusNode = ({
+	jid,
+	message,
+	payload,
+	messageId,
+	mediaType,
+	mediaId,
+	mediaHandle,
+	parentServerId,
+	responseServerId,
+	interactionType,
+	aiContent
+}: NewsletterStatusNodeInput): BinaryNode => {
+	assertNewsletterJid(jid)
+	if (!messageId) throw new TypeError('Newsletter status messageId is required')
+	assertMediaType(mediaType)
+	assertInteraction(interactionType)
+
+	const handle = isPresent(mediaHandle) ? mediaHandle : mediaId
+	if (isPresent(handle) && !mediaType) {
+		throw new TypeError('mediaId requires a media newsletter status')
+	}
+	if (mediaType && !isPresent(handle)) {
+		throw new TypeError('Native newsletter status media requires the media handle returned by the newsletter upload')
+	}
+	if (interactionType === 'question_reshare' && !mediaType) {
+		throw new TypeError('question_reshare requires media')
+	}
+	if (interactionType === 'question_response') {
+		if (mediaType) throw new TypeError('question_response is published as a text status')
+		if (!isPresent(parentServerId)) throw new TypeError('question_response requires parentServerId')
+	}
+
+	const attrs: Record<string, string> = {
+		to: jid,
+		id: messageId,
+		type: mediaType ? 'media' : 'text'
+	}
+	if (mediaType) attrs.media_id = String(handle)
+	if (interactionType === 'question_response') {
+		attrs.server_id = toServerId(parentServerId!, 'parentServerId')
+	}
+
+	const content: BinaryNode[] = [
+		{
+			tag: 'plaintext',
+			attrs: mediaType ? { mediatype: mediaType } : {},
+			content: resolveStatusPayload({ message, payload })
+		}
+	]
+
+	const metaNode = buildMetaNode({ interactionType, parentServerId, responseServerId, aiContent })
+	if (metaNode) content.push(metaNode)
+
+	return { tag: 'status', attrs, content }
+}
+
+export const buildNewsletterStatusReactionNode = ({
+	jid,
+	messageId,
+	parentServerId,
+	reaction
+}: NewsletterStatusReactionNodeInput): BinaryNode => {
+	assertNewsletterJid(jid)
+	if (!messageId) throw new TypeError('Newsletter status reaction messageId is required')
+	if (!isPresent(parentServerId)) {
+		throw new TypeError('Newsletter status reaction requires parentServerId')
+	}
+
+	const isRevoke = !isPresent(reaction)
+	const attrs: Record<string, string> = {
+		to: jid,
+		id: messageId,
+		server_id: toServerId(parentServerId, 'parentServerId'),
+		type: 'reaction'
+	}
+	if (isRevoke) attrs.edit = NEWSLETTER_STATUS_EDIT_REACTION_REVOKE
+
+	return {
+		tag: 'status',
+		attrs,
+		content: [
+			{
+				tag: 'reaction',
+				attrs: isRevoke ? {} : { code: reaction! },
+				content: undefined
+			}
+		]
+	}
+}
+
+export const buildNewsletterStatusRevokeNode = ({ jid, statusId }: NewsletterStatusRevokeNodeInput): BinaryNode => {
+	assertNewsletterJid(jid)
+	if (!statusId) throw new TypeError('Newsletter status revoke requires the status id')
+
+	return {
+		tag: 'status',
+		attrs: {
+			to: jid,
+			id: statusId,
+			type: 'text',
+			edit: NEWSLETTER_STATUS_EDIT_ADMIN_REVOKE
+		},
+		content: [{ tag: 'plaintext', attrs: {}, content: undefined }]
+	}
+}
+
+const sendStatusNode = async (
+	sock: any,
+	node: BinaryNode,
+	{ jid, messageId, timeoutMs }: { jid: string; messageId: string; timeoutMs?: number }
+): Promise<NewsletterStatusAck> => {
+	const diagnostics = collectStatusCallbacks(sock)
+	const responsePromise = sock.waitForMessage(messageId, timeoutMs)
+
+	try {
+		await sock.sendNode(node)
+		const response = await responsePromise
+		return assertStatusServerResponse(response, { jid, messageId, callbacks: diagnostics.frames })
+	} finally {
+		diagnostics.stop()
+	}
+}
+
+export const makeNewsletterStatusSender =
+	(sock: any, config: SocketConfig) =>
+	async (jid: string, content: any, options: NewsletterStatusSendOptions = {}): Promise<NewsletterStatusSendResult> => {
+		assertNewsletterJid(jid)
+		if (!content || typeof content !== 'object' || Array.isArray(content)) {
+			throw new TypeError('Newsletter status content must be an object')
+		}
+
+		const userJid = sock.authState?.creds?.me?.id
+		if (!userJid) throw new TypeError('Not authenticated')
+
+		const {
+			mediaId,
+			mediaHandle: requestedMediaHandle,
+			parentServerId,
+			responseServerId,
+			interactionType: requestedInteractionType,
+			aiContent,
+			statusAttribution = true,
+			messageId: requestedMessageId,
+			ackTimeoutMs,
+			resolveServerId,
+			serverIdTimeoutMs,
+			transport,
+			...messageOptions
+		} = options
+
+		if (transport !== undefined) {
+			config.logger?.warn?.(
+				{ transport },
+				'newsletter status "transport" option is obsolete, the verified status-publish transport is always used'
+			)
+		}
+
+		let uploadedMediaHandle: string | number | undefined
+		const upload = async (...args: any[]) => {
+			const result = await sock.waUploadToServer(...args)
+			if (args[1]?.newsletter) {
+				uploadedMediaHandle =
+					result?.handle ??
+					(result as any)?.media_id ??
+					(result as any)?.mediaId ??
+					result?.fbid ??
+					uploadedMediaHandle
+			}
+			return result
+		}
+
+		const fullMsg = await generateWAMessage(
+			jid,
+			statusAttribution ? withNewsletterStatusAttribution(content) : content,
+			{
+				logger: config.logger,
+				userJid,
+				upload,
+				mediaCache: config.mediaCache,
+				options: config.options,
+				...messageOptions,
+				messageId: requestedMessageId || generateMessageIDV2(userJid)
+			}
+		)
+
+		const normalized = normalizeMessageContent(fullMsg.message)
+		const mediaType = getNewsletterStatusMediaType(fullMsg.message)
+		if (!mediaType && (normalized?.documentMessage || normalized?.stickerMessage)) {
+			throw new TypeError('Native newsletter status supports text, image, video, gif, and audio')
+		}
+		if (mediaType && !NEWSLETTER_STATUS_WEB_MEDIA_TYPES.has(mediaType)) {
+			config.logger?.warn?.(
+				{ mediaType },
+				'newsletter status media type is not published by WhatsApp Web itself, the server may reject it'
+			)
+		}
+
+		const interactionType = requestedInteractionType || (content.question ? 'question' : undefined)
+		if (interactionType === 'question' && !mediaType) {
+			config.logger?.warn?.(
+				'WhatsApp Web only publishes question newsletter statuses on top of media, a text question status may be rejected'
+			)
+		}
+
+		const node = buildNewsletterStatusNode({
+			jid,
+			message: fullMsg.message!,
+			messageId: fullMsg.key.id!,
+			mediaType,
+			mediaHandle: requestedMediaHandle ?? mediaId ?? uploadedMediaHandle,
+			parentServerId,
+			responseServerId,
+			interactionType,
+			aiContent
+		})
+
+		const echo =
+			resolveServerId === false
+				? null
+				: waitForNewsletterStatusServerId(sock, {
+						jid,
+						messageId: fullMsg.key.id!,
+						timeoutMs: serverIdTimeoutMs ?? NEWSLETTER_STATUS_SERVER_ID_TIMEOUT_MS
+				  })
+
+		let ack: NewsletterStatusAck
+		try {
+			ack = await sendStatusNode(sock, node, {
+				jid,
+				messageId: fullMsg.key.id!,
+				timeoutMs: ackTimeoutMs ?? NEWSLETTER_STATUS_ACK_TIMEOUT_MS
+			})
+		} catch (error) {
+			echo?.cancel()
+			throw error
+		}
+
+		const delivered = echo ? await echo : undefined
+
+		fullMsg.status = WAMessageStatus.SERVER_ACK
+		;(fullMsg as any).newsletterStatusServerId = ack.serverId ?? delivered?.serverId
+		;(fullMsg as any).newsletterStatusAck = ack
+		;(fullMsg as any).newsletterStatusResponse = ack.node
+		if (delivered) (fullMsg as any).newsletterStatusDelivered = delivered.node
+		return fullMsg as NewsletterStatusSendResult
+	}
+
+export const makeNewsletterStatusReactionSender =
+	(sock: any) =>
+	async (
+		jid: string,
+		parentServerId: string | number,
+		reaction: string,
+		options: Pick<NewsletterStatusSendOptions, 'messageId' | 'ackTimeoutMs'> = {}
+	): Promise<NewsletterStatusStanzaResult> => {
+		assertNewsletterJid(jid)
+		const userJid = sock.authState?.creds?.me?.id
+		if (!userJid) throw new TypeError('Not authenticated')
+
+		const messageId = options.messageId || generateMessageIDV2(userJid)
+		const node = buildNewsletterStatusReactionNode({ jid, messageId, parentServerId, reaction })
+		const ack = await sendStatusNode(sock, node, {
+			jid,
+			messageId,
+			timeoutMs: options.ackTimeoutMs ?? NEWSLETTER_STATUS_ACK_TIMEOUT_MS
+		})
+
+		return {
+			key: {
+				remoteJid: jid,
+				fromMe: true,
+				id: messageId
+			},
+			status: WAMessageStatus.SERVER_ACK,
+			newsletterStatusServerId: ack.serverId,
+			newsletterStatusAck: ack,
+			newsletterStatusResponse: ack.node
+		}
+	}
+
+export const makeNewsletterStatusRevokeSender =
+	(sock: any) =>
+	async (
+		jid: string,
+		statusId: string,
+		options: Pick<NewsletterStatusSendOptions, 'ackTimeoutMs'> = {}
+	): Promise<NewsletterStatusStanzaResult> => {
+		assertNewsletterJid(jid)
+		const userJid = sock.authState?.creds?.me?.id
+		if (!userJid) throw new TypeError('Not authenticated')
+
+		const node = buildNewsletterStatusRevokeNode({ jid, statusId })
+		const ack = await sendStatusNode(sock, node, {
+			jid,
+			messageId: statusId,
+			timeoutMs: options.ackTimeoutMs ?? NEWSLETTER_STATUS_ACK_TIMEOUT_MS
+		})
+
+		return {
+			key: {
+				remoteJid: jid,
+				fromMe: true,
+				id: statusId
+			},
+			status: WAMessageStatus.SERVER_ACK,
+			newsletterStatusAck: ack,
+			newsletterStatusResponse: ack.node
+		}
+	}
+
+const decodeStatusPayload = (plaintext: any): proto.IMessage | undefined => {
+	const bytes = plaintext?.content
+	if (!bytes || Array.isArray(bytes)) return undefined
+	return proto.Message.decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes))
+}
+
+const parseStatusAdminProfile = (meta: any): NewsletterAdminProfileInfo | undefined => {
+	const adminProfile = meta && getBinaryNodeChild(meta, 'admin_profile')
+	if (!adminProfile) return undefined
+
+	const name = getBinaryNodeChild(adminProfile, 'name')
+	const picture = getBinaryNodeChild(adminProfile, 'picture')
+	const content = name?.content
+	return {
+		id: adminProfile.attrs?.id,
+		name:
+			typeof content === 'string'
+				? content
+				: content instanceof Uint8Array
+				? Buffer.from(content).toString('utf-8')
+				: undefined,
+		pictureId: picture?.attrs?.id,
+		pictureDirectPath: picture?.attrs?.direct_path
+	}
+}
+
+const parseStatusNode = (status: any): NewsletterStatusEntry => {
+	const plaintext = getBinaryNodeChild(status, 'plaintext')
+	const reaction = getBinaryNodeChild(status, 'reaction')
+	const meta = getBinaryNodeChild(status, 'meta')
+	const reactions = getBinaryNodeChild(status, 'reactions')
+	const viewsCount = getBinaryNodeChild(status, 'views_count')
+	const responsesCount = getBinaryNodeChild(status, 'responses_count')
+	return {
+		id: status.attrs?.id,
+		serverId: readIntAttr(status.attrs, 'server_id'),
+		t: readIntAttr(status.attrs, 't'),
+		isSender: status.attrs?.is_sender === 'true',
+		type: status.attrs?.type,
+		edit: status.attrs?.edit,
+		mediaType: plaintext?.attrs?.mediatype as NewsletterStatusMediaType | undefined,
+		interactionType: meta?.attrs?.interaction_type as NewsletterStatusInteractionType | undefined,
+		reaction: reaction ? reaction.attrs?.code ?? '' : undefined,
+		adminProfile: parseStatusAdminProfile(meta),
+		paidPartnership: meta ? !!getBinaryNodeChild(meta, 'paid_partnership') : false,
+		aiContent: meta ? !!getBinaryNodeChild(meta, 'ai_content') : false,
+		editTimestamp: readIntAttr(meta?.attrs, 'msg_edit_t'),
+		originalTimestamp: readIntAttr(meta?.attrs, 'original_msg_t'),
+		reactionCounts: reactions
+			? getBinaryNodeChildren(reactions, 'reaction').map(entry => ({
+					code: entry.attrs?.code,
+					count: readIntAttr(entry.attrs, 'count')
+			  }))
+			: undefined,
+		viewsCount: readIntAttr(viewsCount?.attrs, 'count'),
+		responsesCount: readIntAttr(responsesCount?.attrs, 'count'),
+		message: decodeStatusPayload(plaintext),
+		node: status
+	}
+}
+
+export const parseNewsletterStatusesResponse = (node: any): NewsletterStatusList => {
+	const statuses = getBinaryNodeChild(node, 'statuses')
+	if (!statuses) {
+		const children = Array.isArray(node?.content) ? node.content.map((child: any) => child?.tag) : []
+		const error: any = new Error(`Newsletter statuses response has no <statuses> child, got [${children.join(', ')}]`)
+		error.data = node
+		throw error
+	}
+
+	return {
+		jid: statuses.attrs?.jid,
+		t: readIntAttr(statuses.attrs, 't'),
+		statuses: getBinaryNodeChildren(statuses, 'status').map(parseStatusNode)
+	}
+}
+
+export const parseNewsletterStatusUpdatesResponse = (node: any): NewsletterStatusList => {
+	const updates = getBinaryNodeChild(node, 'status_updates')
+	if (!updates) {
+		const children = Array.isArray(node?.content) ? node.content.map((child: any) => child?.tag) : []
+		const error: any = new Error(
+			`Newsletter status updates response has no <status_updates> child, got [${children.join(', ')}]`
+		)
+		error.data = node
+		throw error
+	}
+
+	return parseNewsletterStatusesResponse(updates)
+}
+
+export const makeNewsletterStatusFetcher =
+	(sock: any) =>
+	async (jid: string, options: NewsletterStatusFetchOptions = {}): Promise<NewsletterStatusList> => {
+		assertNewsletterJid(jid)
+
+		const { count = 20, before, after, viewRole } = options
+		const attrs: Record<string, string> = { type: 'jid', jid }
+		if (isPresent(viewRole)) attrs.view_role = String(viewRole).toLowerCase()
+		attrs.count = String(count)
+		if (isPresent(before)) attrs.before = toServerId(before!, 'before')
+		else if (isPresent(after)) attrs.after = toServerId(after!, 'after')
+
+		const result = await sock.query({
+			tag: 'iq',
+			attrs: {
+				to: S_WHATSAPP_NET,
+				xmlns: 'newsletter',
+				type: 'get'
+			},
+			content: [{ tag: 'statuses', attrs, content: undefined }]
+		})
+
+		return parseNewsletterStatusesResponse(result)
+	}
+
+export const makeNewsletterStatusUpdatesFetcher =
+	(sock: any) =>
+	async (jid: string, options: NewsletterStatusUpdatesFetchOptions = {}): Promise<NewsletterStatusList> => {
+		assertNewsletterJid(jid)
+
+		const { count = 20, since, before, after } = options
+		const attrs: Record<string, string> = { count: String(count) }
+		if (isPresent(since)) attrs.since = String(since)
+		if (isPresent(before)) attrs.before = toServerId(before!, 'before')
+		else if (isPresent(after)) attrs.after = toServerId(after!, 'after')
+
+		const result = await sock.query({
+			tag: 'iq',
+			attrs: {
+				to: jid,
+				xmlns: 'newsletter',
+				type: 'get'
+			},
+			content: [{ tag: 'status_updates', attrs, content: undefined }]
+		})
+
+		return parseNewsletterStatusUpdatesResponse(result)
+	}

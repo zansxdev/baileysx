@@ -14,7 +14,8 @@ export enum XWAPaths {
 	xwa2_newsletter_demote = 'xwa2_newsletter_demote',
 	xwa2_newsletter_delete_v2 = 'xwa2_newsletter_delete_v2',
 	xwa2_fetch_account_reachout_timelock = 'xwa2_fetch_account_reachout_timelock',
-	xwa2_message_capping_info = 'xwa2_message_capping_info'
+	xwa2_message_capping_info = 'xwa2_message_capping_info',
+	xwa2_newsletter_admin_capabilities = 'xwa2_newsletter_admin'
 }
 
 export enum QueryIds {
@@ -31,7 +32,8 @@ export enum QueryIds {
 	DEMOTE = '6551828931592903',
 	DELETE = '30062808666639665',
 	REACHOUT_TIMELOCK = '23983697327930364',
-	MESSAGE_CAPPING_INFO = '24503548349331633'
+	MESSAGE_CAPPING_INFO = '24503548349331633',
+	ADMIN_CAPABILITIES = '9801384413216421'
 }
 export type NewsletterUpdate = {
 	name?: string

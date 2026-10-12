@@ -2,6 +2,13 @@ import type { NewsletterCreateResponse, SocketConfig, WAMediaUpload } from '../T
 import type { NewsletterMetadata, NewsletterUpdate } from '../Types'
 import { QueryIds, XWAPaths } from '../Types'
 import { generateProfilePicture } from '../Utils/messages-media'
+import {
+	makeNewsletterStatusFetcher,
+	makeNewsletterStatusReactionSender,
+	makeNewsletterStatusRevokeSender,
+	makeNewsletterStatusSender,
+	makeNewsletterStatusUpdatesFetcher
+} from '../Utils/newsletter-status'
 import { getBinaryNodeChild } from '../WABinary'
 import { makeGroupsSocket } from './groups'
 import { executeWMexQuery as genericExecuteWMexQuery } from './mex'
@@ -222,6 +229,25 @@ export const makeNewsletterSocket = (config: SocketConfig) => {
 
 		newsletterDelete: async (jid: string) => {
 			await executeWMexQuery({ newsletter_id: jid }, QueryIds.DELETE, XWAPaths.xwa2_newsletter_delete_v2)
+		},
+
+		sendNewsletterStatus: makeNewsletterStatusSender(sock, config),
+		sendNewsletterStatusReaction: makeNewsletterStatusReactionSender(sock),
+		revokeNewsletterStatus: makeNewsletterStatusRevokeSender(sock),
+		getNewsletterStatuses: makeNewsletterStatusFetcher(sock),
+		getNewsletterStatusUpdates: makeNewsletterStatusUpdatesFetcher(sock),
+		newsletterCanPostStatus: async (jid: string) => {
+			const capabilities = await executeWMexQuery<{ capabilities?: string[] }>(
+				{ newsletter_id: jid },
+				QueryIds.ADMIN_CAPABILITIES,
+				XWAPaths.xwa2_newsletter_admin_capabilities
+			)
+			const list = capabilities?.capabilities ?? []
+			return {
+				canPost: list.includes('CHANNEL_STATUS_PRODUCER'),
+				canPostMusic: list.includes('CHANNEL_STATUS_MUSIC'),
+				capabilities: list
+			}
 		}
 	}
 }
