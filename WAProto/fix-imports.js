@@ -77,6 +77,11 @@ try {
     return `${prefix}o.longs === String ? longToString(m.${field}${unsignedArg}) : o.longs === Number ? longToNumber(m.${field}${unsignedArg}) : m.${field};`
   })
 
+  content = content.replace(
+    /(?:export\s+const\s+proto\s+=\s+)?\$root\.proto\s*=\s*(?:\$root\.proto\s*\|\|\s*)?\(\(\)\s*=>/g,
+    'export const proto = $root.proto = $root.proto || (() =>'
+  )
+
   writeFileSync(filePath, content, 'utf8')
   console.log(`✅ Fixed imports in ${filePath}`)
 } catch (error) {

@@ -46,7 +46,7 @@ function longToNumber(value, unsigned) {
 	return Number(value);
 }
 
-export const proto = $root.proto = (() => {
+export const proto = $root.proto = $root.proto || (() => {
 
     const proto = {};
 

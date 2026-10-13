@@ -75,7 +75,7 @@ function longToNumber(value, unsigned) {
   }
   return Number(value);
 }
-var proto = $root.proto = (() => {
+var proto = $root.proto = $root.proto || (() => {
   const proto2 = {};
   proto2.ADVDeviceIdentity = (function() {
     function ADVDeviceIdentity(p) {
