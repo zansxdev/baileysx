@@ -17,8 +17,30 @@
   },
   "license": "MIT",
   "author": "zansxart",
-  "main": "lib/index.js",
+  "main": "lib/index.cjs",
+  "module": "lib/index.js",
   "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": {
+        "import": "./lib/index.d.ts",
+        "require": "./lib/index.d.cts"
+      },
+      "import": "./lib/index.js",
+      "require": "./lib/index.cjs",
+      "default": "./lib/index.js"
+    },
+    "./WAProto": {
+      "types": {
+        "import": "./WAProto/index.d.ts",
+        "require": "./WAProto/index.d.cts"
+      },
+      "import": "./WAProto/index.js",
+      "require": "./WAProto/index.cjs",
+      "default": "./WAProto/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "lib/**/*",
     "WAProto/**/*",
@@ -27,7 +49,8 @@
   "scripts": {
     "build:all": "npm run build && npm run build:docs",
     "build:docs": "typedoc",
-    "build": "tsc -P tsconfig.build.json && tsc-esm-fix --tsconfig=tsconfig.build.json --ext=.js",
+    "build:cjs": "tsx ./scripts/build-cjs.ts",
+    "build": "tsc -P tsconfig.build.json && tsc-esm-fix --tsconfig=tsconfig.build.json --ext=.js && tsx ./scripts/build-cjs.ts",
     "changelog:last": "conventional-changelog -p angular -r 2",
     "changelog:preview": "conventional-changelog -p angular -u",
     "changelog:update": "conventional-changelog -p angular -i CHANGELOG.md -s -r 0",
