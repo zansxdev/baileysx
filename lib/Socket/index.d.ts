@@ -218,7 +218,7 @@ declare const makeWASocket: (config: UserFacingSocketConfig) => {
     addOrEditContact: (jid: string, contact: import("../index.js").proto.SyncActionValue.IContactAction) => Promise<void>;
     removeContact: (jid: string) => Promise<void>;
     placeholderResendCache: import("../index.js").CacheStore;
-    addLabel: (jid: string, labels: import("../Types/Label.js").LabelActionBody) => Promise<void>;
+    addLabel: (jid: string, labels: import("../index.js").LabelActionBody) => Promise<void>;
     addChatLabel: (jid: string, labelId: string) => Promise<void>;
     removeChatLabel: (jid: string, labelId: string) => Promise<void>;
     addMessageLabel: (jid: string, messageId: string, labelId: string) => Promise<void>;

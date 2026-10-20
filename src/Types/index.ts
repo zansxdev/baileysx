@@ -11,6 +11,8 @@ export * from './Call'
 export * from './Signal'
 export * from './Mex'
 export * from './RichType'
+export * from './Label'
+export * from './LabelAssociation'
 
 import type { AuthenticationState } from './Auth'
 import type { SocketConfig } from './Socket'
