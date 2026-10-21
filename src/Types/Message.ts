@@ -235,6 +235,22 @@ export type AnyRegularMessageContent = (
 	| ({
 			text: string
 			linkPreview?: WAUrlInfo | null
+			matchedText?: string
+			description?: string
+			title?: string
+			previewType?: number | string
+			jpegThumbnail?: WAMediaUpload
+			inviteLinkGroupType?: number
+			inviteLinkGroupTypeV2?: number
+			inviteLinkParentGroupSubjectV2?: string
+			inviteLinkParentGroupThumbnailV2?: WAMediaUpload
+			thumbnailDirectPath?: string
+			thumbnailSha256?: Uint8Array | Buffer
+			thumbnailEncSha256?: Uint8Array | Buffer
+			mediaKey?: Uint8Array | Buffer
+			mediaKeyTimestamp?: number | any
+			thumbnailHeight?: number
+			thumbnailWidth?: number
 	  } & Mentionable &
 			Contextable &
 			Editable)

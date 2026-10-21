@@ -675,7 +675,11 @@ export const generateWAMessageContent = async (
 		const extContent = { text: message.text } as WATextMessage
 
 		let urlInfo = message.linkPreview
-		if (typeof urlInfo === 'undefined') {
+		if (
+			typeof urlInfo === 'undefined' &&
+			!(message as any).matchedText &&
+			!(message as any).thumbnailDirectPath
+		) {
 			urlInfo = await generateLinkPreviewIfRequired(message.text, options.getUrlInfo, options.logger)
 		}
 
@@ -710,12 +714,32 @@ export const generateWAMessageContent = async (
 			extContent.font = (message as any).font
 		}
 
+		if ((message as any).matchedText) {
+			extContent.matchedText = (message as any).matchedText
+		}
+
+		if ((message as any).description) {
+			extContent.description = (message as any).description
+		}
+
 		if ((message as any).title) {
 			extContent.title = (message as any).title
 		}
 
+		if ((message as any).previewType !== undefined) {
+			extContent.previewType = (message as any).previewType
+		}
+
 		if ((message as any).jpegThumbnail) {
 			extContent.jpegThumbnail = (message as any).jpegThumbnail
+		}
+
+		if ((message as any).inviteLinkGroupType !== undefined) {
+			extContent.inviteLinkGroupType = (message as any).inviteLinkGroupType
+		}
+
+		if ((message as any).inviteLinkGroupTypeV2 !== undefined) {
+			extContent.inviteLinkGroupTypeV2 = (message as any).inviteLinkGroupTypeV2
 		}
 
 		if ((message as any).inviteLinkParentGroupSubjectV2) {
@@ -724,6 +748,34 @@ export const generateWAMessageContent = async (
 
 		if ((message as any).inviteLinkParentGroupThumbnailV2) {
 			extContent.inviteLinkParentGroupThumbnailV2 = (message as any).inviteLinkParentGroupThumbnailV2
+		}
+
+		if ((message as any).thumbnailDirectPath) {
+			extContent.thumbnailDirectPath = (message as any).thumbnailDirectPath
+		}
+
+		if ((message as any).thumbnailSha256) {
+			extContent.thumbnailSha256 = (message as any).thumbnailSha256
+		}
+
+		if ((message as any).thumbnailEncSha256) {
+			extContent.thumbnailEncSha256 = (message as any).thumbnailEncSha256
+		}
+
+		if ((message as any).mediaKey) {
+			extContent.mediaKey = (message as any).mediaKey
+		}
+
+		if ((message as any).mediaKeyTimestamp !== undefined) {
+			extContent.mediaKeyTimestamp = (message as any).mediaKeyTimestamp
+		}
+
+		if ((message as any).thumbnailHeight !== undefined) {
+			extContent.thumbnailHeight = (message as any).thumbnailHeight
+		}
+
+		if ((message as any).thumbnailWidth !== undefined) {
+			extContent.thumbnailWidth = (message as any).thumbnailWidth
 		}
 
 		m.extendedTextMessage = extContent
