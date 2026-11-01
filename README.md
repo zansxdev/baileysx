@@ -53,12 +53,12 @@ Karena ini adalah custom fork, Anda dapat menginstalnya langsung dari repositori
 
 ### Menggunakan npm:
 ```bash
-npm install github:zansxart/baileysx
+npm install github:zansxdev/baileysx
 ```
 
 ### Menggunakan yarn:
 ```bash
-yarn add github:zansxart/baileysx
+yarn add github:zansxdev/baileysx
 ```
 
 ---

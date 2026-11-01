@@ -10,10 +10,10 @@
     "whatsapp",
     "automation"
   ],
-  "homepage": "https://github.com/zansxart/baileysx",
+  "homepage": "https://github.com/zansxdev/baileysx",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zansxart/baileysx.git"
+    "url": "git+https://github.com/zansxdev/baileysx.git"
   },
   "license": "MIT",
   "author": "zansxart",
