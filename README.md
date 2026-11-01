@@ -2,7 +2,27 @@
 
 Pustaka Node.js berbasis TypeScript berkinerja tinggi untuk berinteraksi dengan API WhatsApp Web secara langsung menggunakan **WebSocket** tanpa Selenium atau Chromium (hemat RAM). 
 
-Ini merupakan **custom fork** (versi `1.0.0`) dari WhiskeySockets Baileys versi `7.0.0-rc13` yang dioptimalkan oleh **zansxart** untuk membawa kembali fitur-fitur penting yang telah dihapus di versi resmi serta meningkatkan performa dekripsi pesan.
+Ini merupakan **custom fork** (versi `1.0.0`) dari WhiskeySockets Baileys versi `7.0.0-rc13` yang dioptimalkan oleh **zansxdev** untuk membawa kembali fitur-fitur penting yang telah dihapus di versi resmi serta meningkatkan stabilitas, performa dekripsi pesan, dan kompatibilitas di semua environment.
+
+---
+
+## ⚡ Highlight Keunggulan & Kompatibilitas
+
+```text
+╰➤ Support All Panel           : Pterodactyl, cPanel, aaPanel, CyberPanel (hemat RAM, tanpa Chromium)
+╰➤ Support VPS                 : Linux (Ubuntu, Debian, Alpine, AlmaLinux) & Windows Server
+╰➤ Support All Terminal        : Bash, Zsh, CMD, PowerShell, Termux, WSL
+╰➤ Support APK                 : Termux Android & environment Node.js mobile
+╰➤ Support SC (Scripts)        : Mendukung Dual-Module (CommonJS & ESM) untuk semua jenis script bot
+╰➤ Support Scan Pairing        : QR Code scanning via terminal maupun canvas web
+╰➤ Support Code Pairing        : 8-digit WhatsApp companion pairing code
+╰➤ Support Custom Pairing      : Kustomisasi kode pairing 8 karakter (customPairingCode)
+╰➤ Support For Web             : Siap integrasi web framework (Express, Fastify, Next.js, Socket.IO)
+╰➤ Support Function Group      : Full Group Management + Group Stories (groupStatusMessageV2) & Tag All
+╰➤ Support All Function        : Text, Media, VN, Dokumen, Native Poll, Buttons, Lists, Interactive Mini Games
+╰➤ Anti Limit / Connection Close: Auto-ACK status stanzas, patch placeholder resend 100ms, anti loop disconnect
+╰➤ Anti Ban (Rust Bridge)      : Menggunakan whatsapp-rust-bridge untuk sinkronisasi crypto & AppState presisi
+```
 
 ---
 
@@ -316,6 +336,23 @@ sock.ev.on('polls.vote', (voteUpdate) => {
     console.log('Waktu memilih:', voteUpdate.timestamp)
 })
 ```
+
+### 4. Custom Pairing Code (Kode Pairing Kustom)
+`baileysx` memungkinkan Anda menentukan kode pairing kustom sebanyak 8 karakter (misalnya nama bot, brand, atau string alfanumerik):
+```typescript
+// Menggunakan kode custom 8 karakter
+const nomorHP = "6285802569316"
+const customCode = "ZANSXDEV" // Wajib tepat 8 karakter
+
+const pairingCode = await sock.requestPairingCode(nomorHP, customCode)
+console.log(`Kode Pairing Kustom Anda: ${pairingCode}`)
+```
+
+### 5. Stabilitas Koneksi & Proteksi Anti-Disconnect
+- **Top-Level Status Acking**: Meng-ACK stanza `<status>` tingkat atas secara otomatis agar server WhatsApp tidak menembakkan `stream:error` yang memicu pemutusan koneksi berulang (*reconnection loop*).
+- **Fast Placeholder Resend**: Waktu tunggu muat ulang pesan terenkripsi dipercepat dari 2000ms menjadi 100ms.
+- **Privacy Token Auto-Recovery**: Menangani error 463 (*MessageAccountRestriction*) secara otomatis dengan re-issue `tcToken` di background tanpa memutus sesi soket.
+- **WhatsApp Rust Bridge Engine**: Enkripsi dan sinkronisasi state menggunakan binding native Rust (`whatsapp-rust-bridge`) untuk performa tinggi dan struktur hash yang presisi menyamai WhatsApp Web resmi.
 
 ---
 
