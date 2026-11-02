@@ -1,362 +1,598 @@
 # baileysx
 
-Pustaka Node.js berbasis TypeScript berkinerja tinggi untuk berinteraksi dengan API WhatsApp Web secara langsung menggunakan **WebSocket** tanpa Selenium atau Chromium (hemat RAM). 
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18.0.0-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![WhatsApp Web Protocol](https://img.shields.io/badge/WhatsApp-Multi--Device-25D366?style=flat-square&logo=whatsapp&logoColor=white)](https://web.whatsapp.com/)
 
-Ini merupakan **custom fork** (versi `1.0.0`) dari WhiskeySockets Baileys versi `7.0.0-rc13` yang dioptimalkan oleh **zansxdev** untuk membawa kembali fitur-fitur penting yang telah dihapus di versi resmi serta meningkatkan stabilitas, performa dekripsi pesan, dan kompatibilitas di semua environment.
+High-performance, memory-efficient TypeScript library for direct interaction with WhatsApp Multi-Device Web APIs via WebSocket. Operates completely headless with zero Chromium or Selenium dependencies, consuming minimal system resources (~30-60 MB RAM).
 
----
-
-## ⚡ Highlight Keunggulan & Kompatibilitas
-
-```text
-╰➤ Support All Panel           : Pterodactyl, cPanel, aaPanel, CyberPanel (hemat RAM, tanpa Chromium)
-╰➤ Support VPS                 : Linux (Ubuntu, Debian, Alpine, AlmaLinux) & Windows Server
-╰➤ Support All Terminal        : Bash, Zsh, CMD, PowerShell, Termux, WSL
-╰➤ Support APK                 : Termux Android & environment Node.js mobile
-╰➤ Support SC (Scripts)        : Mendukung Dual-Module (CommonJS & ESM) untuk semua jenis script bot
-╰➤ Support Scan Pairing        : QR Code scanning via terminal maupun canvas web
-╰➤ Support Code Pairing        : 8-digit WhatsApp companion pairing code
-╰➤ Support Custom Pairing      : Kustomisasi kode pairing 8 karakter (customPairingCode)
-╰➤ Support For Web             : Siap integrasi web framework (Express, Fastify, Next.js, Socket.IO)
-╰➤ Support Function Group      : Full Group Management + Group Stories (groupStatusMessageV2) & Tag All
-╰➤ Support All Function        : Text, Media, VN, Dokumen, Native Poll, Buttons, Lists, Interactive Mini Games
-╰➤ Anti Limit / Connection Close: Auto-ACK status stanzas, patch placeholder resend 100ms, anti loop disconnect
-╰➤ Anti Ban (Rust Bridge)      : Menggunakan whatsapp-rust-bridge untuk sinkronisasi crypto & AppState presisi
-```
+`baileysx` is a production-optimized custom fork of WhiskeySockets Baileys, engineered to restore critical WhatsApp Web features (interactive buttons, lists, group stories, channel status updates), resolve persistent decryption issues, and eliminate reconnect loops through protocol-level stanza handling.
 
 ---
 
-## 🚀 Fitur Unggulan Custom Fork (baileysx)
+## Daftar Isi
 
-Dibandingkan dengan versi resmi Baileys, **baileysx** hadir dengan peningkatan berikut:
-
-1. **Native Buttons & List Messages (Retrofitting)**:
-   - Dukungan penuh untuk membuat dan mengirim pesan Tombol (Buttons), Seksi Daftar (List), Template, Native Flow (Interactive), dan Shop langsung melalui fungsi `sendMessage`.
-   - Menginjeksikan struktur XML `<biz>` secara otomatis di tingkat protokol.
-
-2. **Solusi "Menunggu Pesan Ini" (LID-to-PN Mapping)**:
-   - Pemetaan hubungan nomor telepon (PN) dan ID WhatsApp internal (LID) secara dinamis dalam memori.
-   - Mengatasi delay/kegagalan dekripsi pesan privat pada chat 1-on-1 dengan meresolusi identifikasi perangkat secara tepat.
-
-3. **Placeholder Resend Super Cepat**:
-   - Memangkas delay permintaan muat ulang pesan placeholder yang belum terdekripsi dari **2000 ms menjadi 100 ms**.
-   - Batas waktu deteksi offline telepon dikurangi dari **8 detik menjadi 5 detik** untuk pemrosesan pesan masuk yang lebih responsif.
-
-4. **Dukungan Cerita Grup (Group Status / Stories)**:
-   - Mengirim status media/teks langsung ke segmen cerita grup dengan membungkusnya dalam protokol `groupStatusMessageV2`.
-
-5. **Notifikasi Token Privasi (`tcToken`)**:
-   - Memancarkan event `chats.update` yang membawa data token privasi terbaru segera setelah diterima dari jaringan WhatsApp.
-
-6. **Bypass Pesan Sekali Lihat (Anti-ViewOnce) Opsional**:
-   - Secara otomatis membongkar pembungkus pesan sekali lihat (`viewOnceMessage`, `viewOnceMessageV2`, dan `viewOnceMessageV2Extension`) langsung di layer soket dan merubahnya menjadi media biasa.
-   - Fitur ini dinonaktifkan secara bawaan demi kompatibilitas mundur. Cukup aktifkan dengan menambahkan properti `bypassViewOnce: true` saat inisialisasi soket.
-
-7. **Group Mention All (Tag Semua Anggota Grup)**:
-   - Tambahkan `mentionAll: true` pada opsi/konten pengiriman pesan (`sendMessage`) di grup untuk secara otomatis men-tag seluruh peserta grup tanpa harus mendefinisikan array JID manual.
-
-8. **Auto-Read Messages (Centang Biru Otomatis)**:
-   - Fitur opsional untuk mengirim status laporan dibaca (`read`) secara otomatis sesaat setelah pesan masuk diterima. Cukup aktifkan dengan menambahkan properti `autoReadMessages: true` saat inisialisasi soket.
-
-9. **Native Event `polls.vote`**:
-   - Memproses dekripsi jajak pendapat secara native langsung di dalam layer soket. Memancarkan event `'polls.vote'` dengan data lengkap: `pollId`, `voter`, `vote` terdekripsi, dan `timestamp`.
-
-10. **Rich Response & Pesan Interaktif HTML / Mini Games (Meta AI)**:
-    - Dukungan pembuatan dan pengiriman pesan interaktif berbasis HTML/CSS/JavaScript (Game seperti Tebak Gambar, Tic-Tac-Toe, Slot Machine, Tetris, Catur, Ludo, dll.) langsung di dalam chat WhatsApp.
-    - Mendukung format praktis via `sendMessage` (`{ html: '...' }`) maupun manual relay menggunakan `botForwardedMessage` + `richResponseMessage` (`FOAHtmlPrimitiveDemoDONOTUSE`).
+1. [Arsitektur & Keunggulan Rekayasa](#arsitektur--keunggulan-rekayasa)
+2. [Instalasi](#instalasi)
+3. [Memulai Cepat](#memulai-cepat)
+   - [Inisialisasi Soket](#inisialisasi-soket)
+   - [Autentikasi QR Code](#autentikasi-qr-code)
+   - [Autentikasi Pairing Code (8-Digit & Kustom)](#autentikasi-pairing-code-8-digit--kustom)
+   - [Siklus Hidup Koneksi (Connection Lifecycle)](#siklus-hidup-koneksi-connection-lifecycle)
+4. [Penanganan Pesan (Messaging Guide)](#penanganan-pesan-messaging-guide)
+   - [Mendengarkan Pesan Masuk](#mendengarkan-pesan-masuk)
+   - [Mengirim Pesan Teks & Mention](#mengirim-pesan-teks--mention)
+   - [Mengirim Media (Gambar, Video, Audio, Dokumen, Sticker)](#mengirim-media-gambar-video-audio-dokumen-sticker)
+   - [Membalas Pesan (Quoted Message) & Reaksi](#membalas-pesan-quoted-message--reaksi)
+   - [Pesan Sekali Lihat (View Once)](#pesan-sekali-lihat-view-once)
+5. [Fitur Unggulan baileysx](#fitur-unggulan-baileysx)
+   - [Cerita Grup (Group Stories / Group Status)](#1-cerita-grup-group-stories--group-status)
+   - [Status Saluran (Newsletter Stories & Status)](#2-status-saluran-newsletter-stories--status)
+   - [Pesan Interaktif & Native Buttons](#3-pesan-interaktif--native-buttons)
+   - [Meta AI Formatting & Verified Star Badge](#4-meta-ai-formatting--verified-star-badge)
+   - [Manajemen Panggilan (Voice & Video Calls)](#5-manajemen-panggilan-voice--video-calls)
+   - [Penyimpanan Dalam Memori (In-Memory Store)](#6-penyimpanan-dalam-memori-in-memory-store)
+   - [Stabilitas Koneksi & Anti-Disconnect](#7-stabilitas-koneksi--anti-disconnect)
+6. [Manajemen Grup & Saluran](#manajemen-grup--saluran)
+   - [Operasi Grup](#operasi-grup)
+   - [Operasi Saluran (Newsletter)](#operasi-saluran-newsletter)
+7. [Referensi Konfigurasi (SocketConfig)](#referensi-konfigurasi-socketconfig)
+8. [Lisensi & Disclaimer](#lisensi--disclaimer)
 
 ---
 
-## 📦 Cara Instalasi
+## Arsitektur & Keunggulan Rekayasa
 
-Karena ini adalah custom fork, Anda dapat menginstalnya langsung dari repositori GitHub:
+`baileysx` dirancang untuk sistem backend, mikroservis, dan automasi berskala produksi yang membutuhkan throughput tinggi dan latensi rendah:
 
-### Menggunakan npm:
+- **Zero Chromium Dependency**: Berkomunikasi langsung menggunakan koneksi WebSocket terenkripsi Noise protocol ke kluster server WhatsApp. Tidak memerlukan browser headless, menghemat 85%+ pemakaian CPU dan memori dibandingkan Puppeteer/Playwright.
+- **Dual-Module Support**: Mendukung interoperabilitas penuh antara format **CommonJS (CJS)** (`require('baileysx')`) dan **ECMAScript Modules (ESM)** (`import ... from 'baileysx'`) tanpa duplikasi instance runtime ProtoBuf (`$root.proto`).
+- **WhatsApp Rust Bridge**: Menggunakan binding native Rust untuk komputasi kriptografi tingkat rendah, hashing AppState, dan sinkronisasi kunci sesi secara deterministik.
+- **Dynamic LID-to-PN Resolution**: Menyimpan dan memetakan LID (LID ID internal WhatsApp) ke Phone Number (PN) secara transparan di memori, mengeliminasi delay dekripsi `"Menunggu pesan ini... / Waiting for this message"` pada obrolan privat 1-on-1.
+- **Fast Resend Backoff**: Mempercepat siklus placeholder message resend dari 2000 ms menjadi **100 ms**, serta menurunkan ambang batas deteksi offline perangkat primer dari 8 detik menjadi **5 detik**.
+
+---
+
+## Instalasi
+
+Pasang paket langsung dari GitHub repository:
+
 ```bash
+# Menggunakan NPM
 npm install github:zansxdev/baileysx
-```
 
-### Menggunakan yarn:
-```bash
+# Menggunakan Yarn
 yarn add github:zansxdev/baileysx
+
+# Menggunakan PNPM
+pnpm add github:zansxdev/baileysx
+```
+
+### Dependensi Pendukung
+
+Untuk menangani logging dan scanning QR terminal:
+
+```bash
+npm install pino qrcode-terminal
 ```
 
 ---
 
-## 🛠️ Panduan Memulai Cepat
+## Memulai Cepat
 
-Berikut adalah contoh dasar untuk menghubungkan akun WhatsApp Anda menggunakan autentikasi multi-file dan memantau pesan masuk:
+### Inisialisasi Soket
+
+Berikut adalah pola standar untuk menginisialisasi soket dengan manajemen kredensial multi-file (`useMultiFileAuthState`):
 
 ```typescript
-import makeWASocket, { DisconnectReason, useMultiFileAuthState } from 'baileysx'
-import { Boom } from '@hapi/boom'
+import makeWASocket, {
+    DisconnectReason,
+    useMultiFileAuthState,
+    fetchLatestBaileysVersion,
+    makeCacheableSignalKeyStore
+} from 'baileysx'
+import pino from 'pino'
 
-async function hubungkanKeWhatsApp() {
-    // 1. Mengelola sesi autentikasi (menyimpan sesi dalam folder 'sesi_baileysx')
-    const { state, saveCreds } = await useMultiFileAuthState('sesi_baileysx')
-    
-    // 2. Inisialisasi soket WhatsApp
+async function startSock() {
+    // 1. Inisialisasi state autentikasi berbasis direktori lokal
+    const { state, saveCreds } = await useMultiFileAuthState('./auth_session')
+
+    // 2. Dapatkan versi protokol WhatsApp Web terbaru
+    const { version, isLatest } = await fetchLatestBaileysVersion()
+    console.log(`Menggunakan WA versi v${version.join('.')}, isLatest: ${isLatest}`)
+
+    // 3. Konfigurasi koneksi soket
     const sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: true // Menampilkan QR Code di terminal
+        version,
+        logger: pino({ level: 'silent' }),
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+        },
+        printQRInTerminal: false, // Set false jika menggunakan pairing code
+        generateHighQualityLinkPreview: true,
+        syncFullHistory: false,
+        markOnlineOnConnect: true
     })
 
-    // 3. Memantau pembaruan koneksi
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update
-        
-        if (connection === 'close') {
-            const harusKonekUlang = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut
-            console.log('Koneksi terputus karena:', lastDisconnect?.error, '. Mencoba konek ulang:', harusKonekUlang)
-            if (harusKonekUlang) {
-                hubungkanKeWhatsApp()
-            }
-        } else if (connection === 'open') {
-            console.log('Koneksi WhatsApp berhasil dibuka!')
-        }
-    })
-
-    // 4. Memantau pesan masuk baru
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type === 'notify') {
-            for (const msg of messages) {
-                if (!msg.key.fromMe && msg.message) {
-                    console.log(`Pesan baru dari ${msg.key.remoteJid}:`, msg.message)
-                    
-                    // Contoh membalas pesan otomatis
-                    await sock.sendMessage(msg.key.remoteJid!, { text: 'Halo! Pesan Anda telah diterima oleh baileysx.' })
-                }
-            }
-        }
-    })
-
-    // 5. Menyimpan kredensial sesi saat ada pembaruan
+    // 4. Simpan pembaruan kredensial secara otomatis
     sock.ev.on('creds.update', saveCreds)
+
+    return sock
 }
-
-hubungkanKeWhatsApp()
 ```
 
----
+### Autentikasi QR Code
 
-## ✉️ Panduan Mengirim Pesan Kustom
+Jika Anda ingin menampilkan QR Code di terminal:
 
-### 1. Mengirim Pesan Tombol (Native Buttons)
 ```typescript
-await sock.sendMessage(jid, {
-    text: "Pilih opsi di bawah ini:",
-    footer: "Branding zansxart",
-    buttons: [
-        { buttonId: 'id1', buttonText: { displayText: 'Tombol 1' } },
-        { buttonId: 'id2', buttonText: { displayText: 'Tombol 2' } }
-    ]
-})
-```
+import qrcode from 'qrcode-terminal'
 
-### 2. Mengirim Pesan Daftar (List Message)
-```typescript
-await sock.sendMessage(jid, {
-    title: "Menu Utama",
-    text: "Pilih layanan kami:",
-    footer: "Dipersembahkan oleh zansxart",
-    buttonText: "Buka Daftar",
-    sections: [
-        {
-            title: "Kategori Produk",
-            rows: [
-                { title: "Produk A", rowId: "prod_a", description: "Deskripsi Produk A" },
-                { title: "Produk B", rowId: "prod_b", description: "Deskripsi Produk B" }
-            ]
-        }
-    ]
-})
-```
-
-### 3. Mengirim Cerita Grup (Group Status)
-```typescript
-await sock.sendMessage(jid, {
-    groupStatusMessage: {
-        image: { url: './gambar_cerita.jpg' },
-        caption: 'Cerita grup harian kami!'
+sock.ev.on('connection.update', (update) => {
+    const { qr } = update
+    if (qr) {
+        console.log('Pindai QR Code berikut menggunakan aplikasi WhatsApp:')
+        qrcode.generate(qr, { small: true })
     }
 })
 ```
 
-### 4. Mengirim Pesan Interaktif HTML / Mini Games (Meta AI Rich Response)
+### Autentikasi Pairing Code (8-Digit & Kustom)
 
-**baileysx** mendukung pengiriman aplikasi web ringan / game interaktif berbasis HTML5, CSS, dan JavaScript yang dapat dibuka dan dimainkan secara langsung di dalam aplikasi WhatsApp menggunakan arsitektur **Meta AI Rich Response** (`richResponseMessage`).
+Metode Companion Pairing Code memungkinkan login tanpa perlu scan kamera. `baileysx` menambahkan parameter opsional untuk kustomisasi kode pairing 8 karakter:
 
-#### ⚡ Cara 1: Menggunakan `sock.sendMessage` (Paling Praktis)
-Anda dapat langsung menyematkan string HTML ke properti `html` di dalam `sendMessage`:
-
-```typescript
-const htmlGame = `<!DOCTYPE html>
-<html lang="id">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<style>
-  body {
-    background: #111b21;
-    color: #e9edef;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    text-align: center;
-    padding: 24px 16px;
-    touch-action: manipulation;
-  }
-  .card {
-    background: #1f2c34;
-    border: 1px solid #2a3942;
-    border-radius: 14px;
-    padding: 20px;
-    max-width: 320px;
-    margin: 0 auto;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-  }
-  h2 { color: #ffd166; margin-bottom: 8px; font-size: 18px; }
-  p { color: #8696a0; font-size: 13px; margin-bottom: 16px; }
-  .counter { font-size: 36px; font-weight: bold; color: #00a884; margin-bottom: 16px; }
-  button {
-    background: #00a884;
-    color: #0b141a;
-    border: none;
-    border-radius: 10px;
-    padding: 12px 24px;
-    font-size: 14px;
-    font-weight: bold;
-    cursor: pointer;
-    transition: transform 0.1s ease;
-  }
-  button:active { transform: scale(0.95); }
-</style>
-</head>
-<body>
-  <div class="card">
-    <h2>🕹️ Mini Clicker</h2>
-    <p>Ketuk tombol secepat mungkin!</p>
-    <div class="counter" id="count">0</div>
-    <button onclick="document.getElementById('count').innerText = ++count">TAP SAYA!</button>
-  </div>
-  <script>let count = 0;</script>
-</body>
-</html>`
-
-// Kirim langsung via sendMessage:
-await sock.sendMessage(jid, {
-    html: htmlGame
-})
-```
-
-#### 🛠️ Cara 2: Menggunakan `generateWAMessageFromContent` + `relayMessage` (Low-Level / Plugin Bot)
-Jika bot Anda membutuhkan kontrol penuh atas format relay dan ID pesan:
-
-```typescript
-import { generateWAMessageFromContent } from 'baileysx'
-import crypto from 'crypto'
-
-const slots = {
-    botForwardedMessage: {
-        message: {
-            richResponseMessage: {
-                messageType: 1,
-                unifiedResponse: {
-                    data: Buffer.from(JSON.stringify({
-                        __typename: "GenAIUnifiedResponse",
-                        response_id: crypto.randomUUID(),
-                        sections: [{
-                            __typename: "GenAIUnifiedResponseSection",
-                            view_model: {
-                                __typename: "GenAISingleLayoutViewModel",
-                                primitive: {
-                                    __typename: "FOAHtmlPrimitiveDemoDONOTUSE", // Bypass typename client WhatsApp
-                                    trusted_sources: [],
-                                    payload: htmlGame
-                                }
-                            }
-                        }]
-                    })).toString("base64")
-                },
-                contextInfo: {
-                    isForwarded: true,
-                    forwardOrigin: 4
-                }
-            }
-        }
-    }
-}
-
-const msg = generateWAMessageFromContent(jid, slots, {})
-await sock.relayMessage(jid, msg.message, {
-    messageId: msg.key.id
-})
-```
-
-> **💡 Tips Optimalisasi HTML Game WhatsApp:**
-> 1. **Meta Viewport:** Wajib gunakan `<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">` agar pas di layar handphone dan tidak ter-zoom otomatis saat diklik.
-> 2. **Touch Response:** Gunakan `touch-action: manipulation;` di CSS pada elemen interaktif untuk menghilangkan delay ~300ms saat disentuh di layar sentuh.
-> 3. **Palet Warna WhatsApp Dark:**
->    - Background Utama: `#0b141a` atau `transparent`
->    - Container Kartu: `#111b21` atau `#1f2c34`
->    - Border: `#2a3942` atau `#374248`
->    - Aksen Hijau WhatsApp: `#00a884`
->    - Aksen Emas/Poin: `#ffd166`
->    - Teks Utama: `#e9edef`, Teks Sekunder: `#8696a0`
-
----
-
-## ⚙️ Panduan Fitur Tambahan baileysx
-
-### 1. Group Mention All (Tag Semua Anggota Grup)
-Anda dapat secara otomatis men-tag seluruh anggota grup dengan menyematkan parameter `mentionAll: true` baik di opsi pesan maupun konten pesan:
-```typescript
-// Melalui opsi pesan (Options)
-await sock.sendMessage(groupJid, { text: "Halo semuanya!" }, { mentionAll: true })
-
-// Atau langsung dalam konten pesan
-await sock.sendMessage(groupJid, { text: "Pengumuman penting!", mentionAll: true })
-```
-
-### 2. Auto-Read Messages (Centang Biru Otomatis)
-Aktifkan centang biru otomatis untuk semua pesan masuk (kecuali pesan dari diri sendiri atau pesan bertipe peer) saat menginisialisasi koneksi soket:
 ```typescript
 const sock = makeWASocket({
-    auth: state,
-    autoReadMessages: true // Aktifkan centang biru otomatis
+    auth: { creds: state.creds, keys: state.keys },
+    printQRInTerminal: false
+})
+
+if (!sock.authState.creds.registered) {
+    const phoneNumber = '6281234567890' // Nomor internasional tanpa simbol '+'
+    
+    // Opsi A: Pairing code acak standar WhatsApp (8 digit)
+    const code = await sock.requestPairingCode(phoneNumber)
+    console.log(`Kode Pairing Anda: ${code}`)
+
+    // Opsi B: Custom Pairing Code (wajib tepat 8 karakter alfabet/angka)
+    // const customCode = await sock.requestPairingCode(phoneNumber, 'ZANSXDEV')
+    // console.log(`Kode Pairing Kustom Anda: ${customCode}`)
+}
+```
+
+### Siklus Hidup Koneksi (Connection Lifecycle)
+
+Tangani status koneksi, pemutusan sementara, dan rekoneksi otomatis dengan memeriksa status koneksi pada event `connection.update`:
+
+```typescript
+import { Boom } from '@hapi/boom'
+import { DisconnectReason } from 'baileysx'
+
+sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect } = update
+
+    if (connection === 'close') {
+        const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut
+
+        console.log(`Koneksi terputus (Status: ${statusCode}). Mencoba menghubungkan kembali: ${shouldReconnect}`)
+
+        if (shouldReconnect) {
+            startSock() // Rekoneksi soket
+        } else {
+            console.log('Sesi telah keluar (logged out). Hapus direktori auth_session dan scan ulang.')
+        }
+    } else if (connection === 'open') {
+        console.log('Koneksi soket WhatsApp berhasil terhubung.')
+    }
 })
 ```
-
-### 3. Native Event `polls.vote` (Dekripsi Polling)
-Dapatkan notifikasi real-time saat pengguna memilih/memilih di polling:
-```typescript
-sock.ev.on('polls.vote', (voteUpdate) => {
-    console.log('Ada suara masuk pada polling!')
-    console.log('ID Polling:', voteUpdate.pollId)
-    console.log('Pemilih:', voteUpdate.voter)
-    console.log('Pilihan terdekripsi:', voteUpdate.vote)
-    console.log('Waktu memilih:', voteUpdate.timestamp)
-})
-```
-
-### 4. Custom Pairing Code (Kode Pairing Kustom)
-`baileysx` memungkinkan Anda menentukan kode pairing kustom sebanyak 8 karakter (misalnya nama bot, brand, atau string alfanumerik):
-```typescript
-// Menggunakan kode custom 8 karakter
-const nomorHP = "6285802569316"
-const customCode = "ZANSXDEV" // Wajib tepat 8 karakter
-
-const pairingCode = await sock.requestPairingCode(nomorHP, customCode)
-console.log(`Kode Pairing Kustom Anda: ${pairingCode}`)
-```
-
-### 5. Stabilitas Koneksi & Proteksi Anti-Disconnect
-- **Top-Level Status Acking**: Meng-ACK stanza `<status>` tingkat atas secara otomatis agar server WhatsApp tidak menembakkan `stream:error` yang memicu pemutusan koneksi berulang (*reconnection loop*).
-- **Fast Placeholder Resend**: Waktu tunggu muat ulang pesan terenkripsi dipercepat dari 2000ms menjadi 100ms.
-- **Privacy Token Auto-Recovery**: Menangani error 463 (*MessageAccountRestriction*) secara otomatis dengan re-issue `tcToken` di background tanpa memutus sesi soket.
-- **WhatsApp Rust Bridge Engine**: Enkripsi dan sinkronisasi state menggunakan binding native Rust (`whatsapp-rust-bridge`) untuk performa tinggi dan struktur hash yang presisi menyamai WhatsApp Web resmi.
 
 ---
 
-## ⚖️ Lisensi & Disclaimer
+## Penanganan Pesan (Messaging Guide)
 
-- Pustaka ini dilisensikan di bawah lisensi **MIT**.
-- Proyek ini **tidak berafiliasi, disponsori, atau disetujui secara resmi oleh WhatsApp Inc.** atau Facebook/Meta. Gunakan secara bijak dan bertanggung jawab untuk menghindari pemblokiran nomor oleh WhatsApp.
+### Mendengarkan Pesan Masuk
+
+Event `messages.upsert` memancarkan semua pesan baru yang diterima atau disinkronkan:
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return
+
+    for (const msg of messages) {
+        // Abaikan pesan tanpa isi atau pesan status lama
+        if (!msg.message || msg.key.fromMe) continue
+
+        const sender = msg.key.remoteJid
+        const messageText =
+            msg.message.conversation ||
+            msg.message.extendedTextMessage?.text ||
+            msg.message.imageMessage?.caption ||
+            ''
+
+        console.log(`Pesan diterima dari ${sender}: ${messageText}`)
+    }
+})
+```
+
+### Mengirim Pesan Teks & Mention
+
+```typescript
+// Pesan teks standar
+await sock.sendMessage(jid, { text: 'Halo dari BaileysX!' })
+
+// Pesan dengan mention pengguna
+await sock.sendMessage(jid, {
+    text: 'Halo @6281234567890, silakan periksa berkas Anda.',
+    mentions: ['6281234567890@s.whatsapp.net']
+})
+```
+
+### Mengirim Media (Gambar, Video, Audio, Dokumen, Sticker)
+
+`baileysx` mendukung input media melalui path file, URL, Buffer memory, atau readable stream:
+
+```typescript
+import fs from 'fs'
+
+// 1. Gambar dengan caption
+await sock.sendMessage(jid, {
+    image: { url: 'https://example.com/banner.png' },
+    caption: 'Katalog Produk Terbaru'
+})
+
+// 2. Video
+await sock.sendMessage(jid, {
+    video: fs.readFileSync('./demo.mp4'),
+    caption: 'Cuplikan Video Presentasi',
+    gifPlayback: false
+})
+
+// 3. Audio / Voice Note (PTT)
+await sock.sendMessage(jid, {
+    audio: fs.readFileSync('./audio.mp3'),
+    mimetype: 'audio/mp4',
+    ptt: true // Dikirim sebagai Pesan Suara / VN (gelombang suara)
+})
+
+// 4. Dokumen PDF
+await sock.sendMessage(jid, {
+    document: fs.readFileSync('./report.pdf'),
+    mimetype: 'application/pdf',
+    fileName: 'Laporan_Keuangan.pdf'
+})
+
+// 5. Sticker WebP
+await sock.sendMessage(jid, {
+    sticker: fs.readFileSync('./sticker.webp')
+})
+```
+
+### Membalas Pesan (Quoted Message) & Reaksi
+
+```typescript
+// Membalas pesan spesifik
+await sock.sendMessage(
+    jid,
+    { text: 'Pesan ini adalah balasan resmi.' },
+    { quoted: targetMessage }
+)
+
+// Mengirim reaksi emoji
+await sock.sendMessage(jid, {
+    react: {
+        text: '👍', // Emoji reaksi (atau string kosong '' untuk mencabut reaksi)
+        key: targetMessage.key
+    }
+})
+
+// Menghapus pesan untuk semua orang (Delete for Everyone)
+await sock.sendMessage(jid, { delete: targetMessage.key })
+```
+
+### Pesan Sekali Lihat (View Once)
+
+```typescript
+await sock.sendMessage(jid, {
+    image: fs.readFileSync('./secret.jpg'),
+    caption: 'Foto ini hanya dapat dilihat sekali.',
+    viewOnce: true
+})
+```
+
+---
+
+## Fitur Unggulan baileysx
+
+### 1. Cerita Grup (Group Stories / Group Status)
+
+WhatsApp memperkenalkan fitur status berbasis grup tempat anggota dapat membagikan cerita (*story*) yang hanya terlihat oleh anggota grup tertentu. Di `baileysx`, Anda dapat mengirim status teks, gambar, atau video langsung ke segmen cerita grup.
+
+```typescript
+const groupJid = '120363012345678901@g.us'
+
+// A. Mengirim Status Teks ke Grup
+await sock.sendMessage(groupJid, {
+    groupStatusMessage: {
+        text: 'Pengumuman Cerita Grup: Pertemuan tim akan dimulai pukul 14:00 WIB.'
+    }
+})
+
+// B. Mengirim Cerita Media (Gambar) ke Grup dengan opsi groupStatus
+await sock.sendMessage(
+    groupJid,
+    {
+        image: fs.readFileSync('./announcement.jpg'),
+        caption: 'Poster Agenda Kegiatan Mingguan',
+        groupStatus: true
+    }
+)
+
+// C. Mengirim Cerita Video ke Grup
+await sock.sendMessage(
+    groupJid,
+    {
+        video: fs.readFileSync('./highlight.mp4'),
+        caption: 'Dokumentasi Rapat Kerja',
+        groupStatus: true
+    }
+)
+
+// D. Membatasi audiens cerita grup ke anggota tertentu (statusJidList)
+await sock.sendMessage(
+    groupJid,
+    {
+        text: 'Cerita khusus koordinator divisi.',
+        groupStatus: true
+    },
+    {
+        statusJidList: [
+            '6281234567890@s.whatsapp.net',
+            '6289876543210@s.whatsapp.net'
+        ]
+    }
+)
+```
+
+### 2. Status Saluran (Newsletter Stories & Status)
+
+WhatsApp Newsletter (Saluran) kini mendukung penerbitan cerita/status saluran mandiri. `baileysx` menyediakan serangkaian method asli pada instance soket:
+
+```typescript
+const newsletterJid = '120363123456789012@newsletter'
+
+// 1. Periksa apakah akun memiliki izin menerbitkan status di saluran
+const capability = await sock.newsletterCanPostStatus(newsletterJid)
+console.log('Izin Post Status:', capability.canPost) // true jika CHANNEL_STATUS_PRODUCER aktif
+
+// 2. Terbitkan Status Teks ke Saluran
+const textStatus = await sock.sendNewsletterStatus(newsletterJid, {
+    text: 'Pembaruan Saluran: Fitur baru telah dirilis hari ini!'
+})
+console.log('Status Terkirim dengan Server ID:', textStatus.newsletterStatusServerId)
+
+// 3. Terbitkan Status Media (Gambar/Video) ke Saluran
+const mediaStatus = await sock.sendNewsletterStatus(newsletterJid, {
+    image: { url: 'https://example.com/cover.jpg' },
+    caption: 'Pengumuman Resmi Saluran'
+})
+
+// 4. Ambil Daftar Status Terbaru dari Saluran
+const statusList = await sock.getNewsletterStatuses(newsletterJid, { count: 10 })
+for (const entry of statusList.statuses) {
+    console.log(`Status ID: ${entry.id}, Server ID: ${entry.serverId}, Views: ${entry.viewsCount}`)
+}
+
+// 5. Berikan Reaksi ke Status Saluran
+await sock.sendNewsletterStatusReaction(newsletterJid, {
+    messageId: textStatus.key.id,
+    parentServerId: textStatus.newsletterStatusServerId,
+    reaction: '🔥'
+})
+
+// 6. Hapus / Tarik Status Saluran (Admin Revoke)
+await sock.revokeNewsletterStatus(newsletterJid, textStatus.key.id)
+```
+
+### 3. Pesan Interaktif & Native Buttons
+
+`baileysx` merestorasi fungsionalitas pesan tombol dan interaktif modern WhatsApp (Native Flow) yang telah dihapus di pustaka resmi. Struktur XML `<biz>` dan pembungkus `viewOnceMessage` secara otomatis diterapkan agar tombol dapat ditampilkan pada Android, iOS, dan Web:
+
+```typescript
+// Mengirim tombol aksi cepat (Quick Reply, CTA URL, dan CTA Copy)
+await sock.sendMessage(jid, {
+    text: 'Pilih salah satu menu di bawah ini untuk melanjutkan:',
+    footer: 'Antarmuka Otomatis BaileysX',
+    buttons: [
+        {
+            name: 'quick_reply',
+            buttonParamsJson: JSON.stringify({
+                display_text: 'Cek Status Layanan',
+                id: 'btn_check_status'
+            })
+        },
+        {
+            name: 'cta_url',
+            buttonParamsJson: JSON.stringify({
+                display_text: 'Kunjungi Dokumentasi',
+                url: 'https://github.com/zansxdev/baileysx'
+            })
+        },
+        {
+            name: 'cta_copy',
+            buttonParamsJson: JSON.stringify({
+                display_text: 'Salin Perintah Instalasi',
+                copy_code: 'npm install github:zansxdev/baileysx'
+            })
+        }
+    ]
+})
+```
+
+### 4. Meta AI Formatting & Verified Star Badge
+
+WhatsApp menampilkan badge verifikasi bintang ungu pada pesan yang direspons oleh Meta AI. `baileysx` menyediakan integrasi penuh untuk menghasilkan stilisasi Meta AI melalui stanza `<biz_bot>` dan `forwardedAiBotMessageInfo`:
+
+```typescript
+// A. Kirim pesan dengan badge Meta AI bawaan
+await sock.sendMessage(
+    jid,
+    { text: 'Halo! Saya asisten virtual cerdas Anda.' },
+    { ai: true }
+)
+
+// B. Personalisasi Nama Bot AI pada Badge
+await sock.sendMessage(
+    jid,
+    { text: 'Analisis data Anda telah selesai diproses.' },
+    {
+        ai: 'ZansX Intelligence', // Nama bot yang ditampilkan pada badge
+        aiBotJid: '867051314767696@bot'
+    }
+)
+
+// C. Mengaktifkan/Menonaktifkan format AI secara global saat koneksi soket
+const sock = makeWASocket({
+    auth: state,
+    aiChat: true // Aktif secara default di BaileysX
+})
+```
+
+### 5. Manajemen Panggilan (Voice & Video Calls)
+
+`baileysx` mendukung inisiasi, pembatalan, dan penolakan panggilan suara maupun video secara terprogram:
+
+```typescript
+const targetJid = '6281234567890@s.whatsapp.net'
+
+// 1. Memulai Panggilan Suara (Audio Call)
+const callSession = await sock.offerCall(targetJid, false)
+console.log(`Panggilan keluar dimulai dengan Call ID: ${callSession.id}`)
+
+// 2. Memulai Panggilan Video (Video Call)
+// const videoCallSession = await sock.offerCall(targetJid, true)
+
+// 3. Mengakhiri / Membatalkan Panggilan
+await sock.terminateCall(callSession.id, targetJid)
+
+// 4. Menolak Panggilan Masuk Otomatis (Event Listener 'call')
+sock.ev.on('call', async (calls) => {
+    for (const call of calls) {
+        if (call.status === 'offer') {
+            console.log(`Panggilan masuk dari ${call.from}, otomatis menolak...`)
+            await sock.rejectCall(call.id, call.from)
+        }
+    }
+})
+```
+
+### 6. Penyimpanan Dalam Memori (In-Memory Store)
+
+Untuk memfasilitasi pencarian pesan, sinkronisasi kontak, dan data obrolan tanpa database eksternal yang lambat, `baileysx` menyertakan in-memory store berbasis struktur data `KeyedDB`:
+
+```typescript
+import { makeInMemoryStore } from 'baileysx'
+
+// Inisialisasi store dengan batas riwayat pesan per obrolan
+const store = makeInMemoryStore({
+    maxMessagesPerChat: 50,
+    filterSpam: true
+})
+
+// Muat data yang tersimpan sebelumnya jika ada
+store.readFromFile('./baileys_store.json')
+
+// Simpan data memori ke berkas JSON setiap 15 detik secara berkala
+store.writeToFileInterval('./baileys_store.json', 15_000)
+
+// Hubungkan store dengan event emitter soket
+store.bind(sock.ev)
+
+// Contoh: Mengambil pesan lama berdasarkan ID obrolan dan ID pesan
+const cachedMsg = await store.loadMessage(jid, '3EB0ABC123DEF')
+console.log('Pesan dari cache:', cachedMsg?.message)
+```
+
+### 7. Stabilitas Koneksi & Anti-Disconnect
+
+`baileysx` mengimplementasikan serangkaian patch protokol untuk menjaga soket tetap aktif dalam durasi panjang di server VPS atau container:
+
+- **Top-Level Status Auto-Ack**: Stanza `<status>` tingkat atas yang masuk dari server WhatsApp di-ACK secara otomatis sebelum memicu timeout handshake `stream:error`.
+- **Anti Reconnect-Loop**: Mengisolasi error dekripsi sesi tanpa merusak rantai enkripsi Signal, mencegah siklus disconnect-reconnect berulang saat ada pesan rusak.
+- **Privacy Token Auto-Renewal**: Mendeteksi dan memperbarui token privasi (`tcToken`) saat berinteraksi dengan kontak bisnis baru untuk menghindari galat penolakan pesan (HTTP 463).
+
+---
+
+## Manajemen Grup & Saluran
+
+### Operasi Grup
+
+```typescript
+// 1. Membuat Grup Baru
+const group = await sock.groupCreate('Grup Diskusi Pengembang', [
+    '6281234567890@s.whatsapp.net',
+    '6289876543210@s.whatsapp.net'
+])
+console.log(`Grup dibuat: ${group.id}`)
+
+// 2. Memperbarui Partisipan (Tambah, Keluarkan, Naikkan Admin, Turunkan Admin)
+await sock.groupParticipantsUpdate(group.id, ['6281234567890@s.whatsapp.net'], 'promote') // Menjadi Admin
+await sock.groupParticipantsUpdate(group.id, ['6289876543210@s.whatsapp.net'], 'remove')  // Dikeluarkan
+
+// 3. Mengubah Setelan Izin Grup (Hanya admin yang dapat mengirim pesan)
+await sock.groupSettingUpdate(group.id, 'announcement')
+
+// 4. Mengambil Tautan Undangan Grup
+const inviteCode = await sock.groupInviteCode(group.id)
+console.log(`Tautan Undangan: https://chat.whatsapp.com/${inviteCode}`)
+```
+
+### Operasi Saluran (Newsletter)
+
+```typescript
+// 1. Membuat Saluran Baru
+const channel = await sock.newsletterCreate('Kanal Pembaruan Resmi', 'Saluran informasi seputar rilis software.')
+console.log(`Saluran berhasil dibuat: ${channel.id}`)
+
+// 2. Mengambil Metadata Saluran
+const metadata = await sock.newsletterMetadata('jid', channel.id)
+console.log(`Nama: ${metadata.name}, Pelanggan: ${metadata.subscribers}`)
+
+// 3. Mengikuti / Berhenti Mengikuti Saluran
+await sock.newsletterFollow(channel.id)
+await sock.newsletterUnfollow(channel.id)
+
+// 4. Membisukan Notifikasi Saluran
+await sock.newsletterMute(channel.id)
+```
+
+---
+
+## Referensi Konfigurasi (SocketConfig)
+
+Daftar opsi konfigurasi soket utama saat memanggil `makeWASocket(config)`:
+
+| Opsi | Tipe | Nilai Default | Penjelasan |
+| :--- | :--- | :--- | :--- |
+| `auth` | `AuthenticationState` | **Wajib** | Objek kredensial dan keys yang dikembalikan dari `useMultiFileAuthState`. |
+| `version` | `WAVersion` | `[2, 3000, ...]` | Versi protokol WhatsApp Web yang disimulasikan. Dapatkan via `fetchLatestBaileysVersion()`. |
+| `logger` | `Logger` | `pino` | Instance logger Pino untuk debugging internal soket. |
+| `aiChat` | `boolean` | `true` | Mengaktifkan penyisipan format stanza Meta AI (`biz_bot: '1'`) pada pesan obrolan privat. |
+| `aiBotName` | `string` | `undefined` | Nama tampilan kustom untuk forwarder Meta AI pada obrolan. |
+| `bypassViewOnce` | `boolean` | `false` | Secara otomatis memproses pesan view-once seperti media biasa. |
+| `syncFullHistory` | `boolean` | `false` | Menentukan apakah soket harus menyinkronkan seluruh riwayat obrolan lawas saat login. |
+| `markOnlineOnConnect` | `boolean` | `true` | Mengirim pembaruan kehadiran online otomatis begitu koneksi soket terbentuk. |
+| `generateHighQualityLinkPreview`| `boolean`| `false` | Menghasilkan gambar thumbnail pratinjau tautan beresolusi tinggi. |
+| `connectTimeoutMs` | `number` | `20000` | Waktu tunggu batas maksimal koneksi WebSocket sebelum dianggap timeout. |
+| `keepAliveIntervalMs` | `number` | `30000` | Interval ping/pong heartbeat untuk menjaga koneksi soket tetap aktif. |
+| `getMessage` | `Function` | `undefined` | Fungsi handler pencarian pesan lawas berdasarkan key; penting untuk fungsi retry dekripsi. |
+
+---
+
+## Lisensi & Disclaimer
+
+- Pustaka ini dilisensikan di bawah **[MIT License](LICENSE)**.
+- **Pernyataan Penafian**: Proyek ini tidak berafiliasi, didukung, disponsori, atau disetujui secara resmi oleh WhatsApp Inc., Meta Platforms, Inc., atau entitas terafiliasi lainnya. Nama, merek, dan logo WhatsApp adalah merek dagang terdaftar milik pemiliknya masing-masing. Gunakan pustaka ini secara etis dan patuhi Ketentuan Layanan WhatsApp.
