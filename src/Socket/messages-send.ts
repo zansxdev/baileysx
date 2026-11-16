@@ -1,4 +1,6 @@
 import { randomBytes } from 'crypto'
+import { promises as fsPromises } from 'fs'
+import { deflateSync } from 'zlib'
 import NodeCache from '@cacheable/node-cache'
 import { Boom } from '@hapi/boom'
 import { proto } from '../../WAProto/index.js'
@@ -9,6 +11,8 @@ import type {
 	MessageReceiptType,
 	MessageRelayOptions,
 	MiscMessageGenerationOptions,
+	ShareGroupHistoryInput,
+	ShareGroupHistoryOptions,
 	SocketConfig,
 	WAMessage,
 	WAMessageKey
@@ -23,6 +27,7 @@ import {
 	encodeNewsletterMessage,
 	encodeSignedDeviceIdentity,
 	encodeWAMessage,
+	encryptedStream,
 	encryptMediaRetryRequest,
 	extractDeviceJids,
 	generateMessageIDV2,
@@ -39,6 +44,7 @@ import {
 	normalizeMessageContent,
 	parseAndInjectE2ESessions,
 	prepareInteractiveMessage,
+	toNumber,
 	unixTimestampSeconds
 } from '../Utils'
 import { getUrlInfo } from '../Utils/link-preview'
@@ -1602,6 +1608,211 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		}
 	})
 
+	const shareGroupHistory = async (
+		groupJid: string,
+		input: ShareGroupHistoryInput,
+		options?: ShareGroupHistoryOptions
+	) => {
+		if (!isJidGroup(groupJid)) {
+			throw new Boom('shareGroupHistory can only be used in group chats', { statusCode: 400 })
+		}
+
+		if (!input?.toJids?.length) {
+			throw new Boom('toJids must be an array of recipient JIDs', { statusCode: 400 })
+		}
+
+		if (!input?.messages?.length) {
+			throw new Boom('messages must be a non-empty array', { statusCode: 400 })
+		}
+
+		const historySyncMsgs: proto.IHistorySyncMsg[] = input.messages.map((m: any, idx: number) => {
+			const rawKey = m.key || {}
+			const participant = m.participant || rawKey.participant || '0@s.whatsapp.net'
+			const fromMe =
+				typeof m.fromMe === 'boolean'
+					? m.fromMe
+					: typeof rawKey.fromMe === 'boolean'
+						? rawKey.fromMe
+						: false
+			const id = rawKey.id || m.id || generateMessageIDV2()
+			const rawTimestamp = m.messageTimestamp || Math.floor(Date.now() / 1000)
+			const timestamp =
+				typeof rawTimestamp === 'number' && rawTimestamp > 1e11
+					? Math.floor(rawTimestamp / 1000)
+					: toNumber(rawTimestamp)
+
+			const key: proto.IMessageKey = {
+				remoteJid: groupJid,
+				fromMe,
+				id,
+				participant
+			}
+
+			let messageObj: proto.IMessage = m.message || {}
+			if (m.text) {
+				messageObj = { conversation: m.text }
+			}
+
+			const webMessageInfo: proto.IWebMessageInfo = {
+				key,
+				message: messageObj,
+				messageTimestamp: timestamp,
+				pushName: m.pushName || '',
+				status: proto.WebMessageInfo.Status.DELIVERY_ACK
+			}
+
+			return {
+				message: webMessageInfo,
+				msgOrderId: idx + 1
+			}
+		})
+
+		const historySync = proto.HistorySync.fromObject({
+			syncType: proto.HistorySync.HistorySyncType.ON_DEMAND,
+			conversations: [
+				{
+					id: groupJid,
+					messages: historySyncMsgs
+				}
+			]
+		})
+
+		const uncompressed = Buffer.from(proto.HistorySync.encode(historySync).finish())
+		const compressed = deflateSync(uncompressed)
+
+		const { encFilePath, fileSha256, fileEncSha256, mediaKey } = await encryptedStream(
+			compressed,
+			'md-msg-hist',
+			{ logger }
+		)
+
+		let uploadResult: { directPath: string; mediaUrl?: string }
+		try {
+			const fileEncSha256B64 = fileEncSha256.toString('base64')
+			uploadResult = await waUploadToServer(encFilePath, {
+				fileEncSha256B64,
+				mediaType: 'md-msg-hist',
+				timeoutMs: 30000
+			})
+		} finally {
+			await fsPromises.unlink(encFilePath).catch(() => {})
+		}
+
+		let oldestTimestamp = Math.floor(Date.now() / 1000)
+		for (const hm of historySyncMsgs) {
+			const ts = toNumber(hm.message?.messageTimestamp)
+			if (ts && ts < oldestTimestamp) {
+				oldestTimestamp = ts
+			}
+		}
+
+		const metadata: proto.Message.IMessageHistoryMetadata = {
+			historyReceivers: input.toJids,
+			nonHistoryReceivers: [],
+			messageCount: historySyncMsgs.length,
+			oldestMessageTimestampInWindow: oldestTimestamp,
+			oldestMessageTimestampInBundle: oldestTimestamp
+		}
+
+		const bundleMessage: proto.IMessage = {
+			messageHistoryBundle: {
+				mimetype: 'application/protobuf',
+				fileSha256,
+				mediaKey,
+				fileEncSha256,
+				directPath: uploadResult.directPath,
+				mediaKeyTimestamp: unixTimestampSeconds(),
+				messageHistoryMetadata: metadata
+			},
+			messageContextInfo: {
+				messageSecret: randomBytes(32)
+			}
+		}
+
+		const plaintext = Buffer.from(proto.Message.encode(bundleMessage).finish())
+
+		const meta = await groupMetadata(groupJid)
+		const participantIds = (meta.participants || []).map(p => p.id).filter(Boolean)
+		let devices: any[] = []
+		try {
+			devices = await getUSyncDevices(participantIds, false, false)
+		} catch {}
+		const deviceJids = [...new Set((devices || []).map(d => d.jid).filter(Boolean))]
+		if (!deviceJids.length) {
+			deviceJids.push(...input.toJids)
+		}
+
+		const skdmTargets = [...input.toJids]
+		try {
+			await assertSessions(skdmTargets)
+		} catch {}
+
+		const meLid = authState?.creds?.me?.lid
+		const meId = authState?.creds?.me?.id
+		const senderIdentity = meta.addressingMode === 'lid' && meLid ? meLid : meId!
+
+		const padLen = 1 + ((randomBytes(1)[0] ?? 0) % 16)
+		const padded = Buffer.concat([plaintext, Buffer.alloc(padLen, padLen)])
+
+		const { ciphertext, senderKeyDistributionMessage } =
+			await signalRepository.encryptGroupMessage({
+				group: groupJid,
+				data: padded,
+				meId: senderIdentity
+			})
+
+		const senderKeyMsg: proto.IMessage = {
+			senderKeyDistributionMessage: {
+				groupId: groupJid,
+				axolotlSenderKeyDistributionMessage: senderKeyDistributionMessage
+			}
+		}
+
+		const { nodes: toNodes, shouldIncludeDeviceIdentity: needDeviceIdentity } =
+			await createParticipantNodes(skdmTargets, senderKeyMsg, {
+				mediatype: 'group_history'
+			})
+
+		const phash = generateParticipantHashV2(deviceJids)
+		const id = options?.messageId || ('3EB0' + randomBytes(9).toString('hex').toUpperCase())
+
+		const contentNodes: BinaryNode[] = [
+			{ tag: 'participants', attrs: {}, content: toNodes },
+			{ tag: 'enc', attrs: { v: '2', type: 'skmsg', mediatype: 'group_history' }, content: ciphertext }
+		]
+
+		if (needDeviceIdentity && authState?.creds?.account) {
+			contentNodes.push({
+				tag: 'device-identity',
+				attrs: {},
+				content: encodeSignedDeviceIdentity(authState.creds.account, true)
+			})
+		}
+
+		const stanza: BinaryNode = {
+			tag: 'message',
+			attrs: {
+				id,
+				to: groupJid,
+				type: 'media',
+				addressing_mode: meta.addressingMode || 'lid',
+				phash
+			},
+			content: contentNodes
+		}
+
+		await sendNode(stanza)
+
+		return {
+			id,
+			group: groupJid,
+			toJids: input.toJids,
+			messageCount: historySyncMsgs.length,
+			directPath: uploadResult.directPath,
+			mediaKey
+		}
+	}
+
 	return {
 		...sock,
 		userDevicesCache,
@@ -1609,6 +1820,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		issuePrivacyTokens,
 		assertSessions,
 		relayMessage,
+		shareGroupHistory,
 		relayInteractiveMessage: async (
 			jid: string,
 			interactive: any,

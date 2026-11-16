@@ -1,7 +1,7 @@
 import NodeCache from '@cacheable/node-cache';
 import { Boom } from '@hapi/boom';
 import { proto } from '../../WAProto/index.js';
-import type { AnyMessageContent, MediaConnInfo, MessageReceiptType, MessageRelayOptions, MiscMessageGenerationOptions, SocketConfig, WAMessage, WAMessageKey } from '../Types/index.js';
+import type { AnyMessageContent, MediaConnInfo, MessageReceiptType, MessageRelayOptions, MiscMessageGenerationOptions, ShareGroupHistoryInput, ShareGroupHistoryOptions, SocketConfig, WAMessage, WAMessageKey } from '../Types/index.js';
 import { MessageRetryManager } from '../Utils/index.js';
 import { type BinaryNode, type JidWithDevice } from '../WABinary/index.js';
 import { USyncQuery } from '../WAUSync/index.js';
@@ -13,6 +13,14 @@ export declare const makeMessagesSocket: (config: SocketConfig) => {
     issuePrivacyTokens: (jids: string[], timestamp?: number) => Promise<any>;
     assertSessions: (jids: string[], force?: boolean) => Promise<boolean>;
     relayMessage: (jid: string, message: proto.IMessage, options: MessageRelayOptions) => Promise<string>;
+    shareGroupHistory: (groupJid: string, input: ShareGroupHistoryInput, options?: ShareGroupHistoryOptions) => Promise<{
+        id: string;
+        group: string;
+        toJids: string[];
+        messageCount: number;
+        directPath: string;
+        mediaKey: NonSharedBuffer;
+    }>;
     relayInteractiveMessage: (jid: string, interactive: any, options?: MessageRelayOptions) => Promise<string>;
     sendReceipt: (jid: string, participant: string | undefined, messageIds: string[], type: MessageReceiptType) => Promise<void>;
     sendReceipts: (keys: WAMessageKey[], type: MessageReceiptType) => Promise<void>;

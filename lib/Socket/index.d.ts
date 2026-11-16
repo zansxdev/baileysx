@@ -74,6 +74,14 @@ declare const makeWASocket: (config: UserFacingSocketConfig) => {
     issuePrivacyTokens: (jids: string[], timestamp?: number) => Promise<any>;
     assertSessions: (jids: string[], force?: boolean) => Promise<boolean>;
     relayMessage: (jid: string, message: import("../index.js").proto.IMessage, options: import("../index.js").MessageRelayOptions) => Promise<string>;
+    shareGroupHistory: (groupJid: string, input: import("../index.js").ShareGroupHistoryInput, options?: import("../index.js").ShareGroupHistoryOptions) => Promise<{
+        id: string;
+        group: string;
+        toJids: string[];
+        messageCount: number;
+        directPath: string;
+        mediaKey: NonSharedBuffer;
+    }>;
     relayInteractiveMessage: (jid: string, interactive: any, options?: import("../index.js").MessageRelayOptions) => Promise<string>;
     sendReceipt: (jid: string, participant: string | undefined, messageIds: string[], type: import("../index.js").MessageReceiptType) => Promise<void>;
     sendReceipts: (keys: import("../index.js").WAMessageKey[], type: import("../index.js").MessageReceiptType) => Promise<void>;

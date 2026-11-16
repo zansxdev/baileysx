@@ -399,4 +399,20 @@ export type MediaDecryptionKeyInfo = {
     macKey?: Uint8Array;
 };
 export type MinimalMessage = Pick<WAMessage, 'key' | 'messageTimestamp'>;
+export interface GroupHistoryMessage {
+    key?: proto.IMessageKey;
+    message?: proto.IMessage;
+    messageTimestamp?: number | Long;
+    pushName?: string;
+    participant?: string;
+    fromMe?: boolean;
+    text?: string;
+}
+export interface ShareGroupHistoryInput {
+    toJids: string[];
+    messages: (proto.IWebMessageInfo | GroupHistoryMessage)[];
+}
+export interface ShareGroupHistoryOptions {
+    messageId?: string;
+}
 //# sourceMappingURL=Message.d.ts.map

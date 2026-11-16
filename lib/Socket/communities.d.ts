@@ -87,6 +87,14 @@ export declare const makeCommunitiesSocket: (config: SocketConfig) => {
     issuePrivacyTokens: (jids: string[], timestamp?: number) => Promise<any>;
     assertSessions: (jids: string[], force?: boolean) => Promise<boolean>;
     relayMessage: (jid: string, message: proto.IMessage, options: import("../Types/index.js").MessageRelayOptions) => Promise<string>;
+    shareGroupHistory: (groupJid: string, input: import("../Types/index.js").ShareGroupHistoryInput, options?: import("../Types/index.js").ShareGroupHistoryOptions) => Promise<{
+        id: string;
+        group: string;
+        toJids: string[];
+        messageCount: number;
+        directPath: string;
+        mediaKey: NonSharedBuffer;
+    }>;
     relayInteractiveMessage: (jid: string, interactive: any, options?: import("../Types/index.js").MessageRelayOptions) => Promise<string>;
     sendReceipt: (jid: string, participant: string | undefined, messageIds: string[], type: import("../Types/index.js").MessageReceiptType) => Promise<void>;
     sendReceipts: (keys: WAMessageKey[], type: import("../Types/index.js").MessageReceiptType) => Promise<void>;
