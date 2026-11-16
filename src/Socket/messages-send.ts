@@ -1706,8 +1706,59 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			}
 		}
 
+		const meta = await groupMetadata(groupJid)
+		const isLidGroup = meta.addressingMode === 'lid'
+
+		// Resolve all recipients: both LID and PN identities
+		const resolvedHistoryReceivers = new Set<string>()
+		const targetParticipantJids = new Set<string>()
+
+		for (const rawJid of input.toJids) {
+			const normalized = jidNormalizedUser(rawJid)
+			resolvedHistoryReceivers.add(normalized)
+
+			const participant = meta.participants?.find(
+				p => p.id === normalized ||
+				     p.phoneNumber === normalized ||
+				     jidNormalizedUser(p.id || '') === normalized ||
+				     jidNormalizedUser(p.phoneNumber || '') === normalized
+			)
+
+			if (participant) {
+				if (participant.id) {
+					resolvedHistoryReceivers.add(participant.id)
+					targetParticipantJids.add(participant.id)
+				}
+				if (participant.phoneNumber) {
+					resolvedHistoryReceivers.add(participant.phoneNumber)
+					if (!isLidGroup) {
+						targetParticipantJids.add(participant.phoneNumber)
+					}
+				}
+			} else {
+				targetParticipantJids.add(normalized)
+				if (isLidGroup && !normalized.endsWith('@lid')) {
+					try {
+						const lid = await signalRepository.lidMapping.getLIDForPN(normalized)
+						if (lid) {
+							resolvedHistoryReceivers.add(lid)
+							targetParticipantJids.add(lid)
+						}
+					} catch {}
+				} else if (!isLidGroup && normalized.endsWith('@lid')) {
+					try {
+						const pn = await signalRepository.lidMapping.getPNForLID(normalized)
+						if (pn) {
+							resolvedHistoryReceivers.add(pn)
+							targetParticipantJids.add(pn)
+						}
+					} catch {}
+				}
+			}
+		}
+
 		const metadata: proto.Message.IMessageHistoryMetadata = {
-			historyReceivers: input.toJids,
+			historyReceivers: Array.from(resolvedHistoryReceivers),
 			nonHistoryReceivers: [],
 			messageCount: historySyncMsgs.length,
 			oldestMessageTimestampInWindow: oldestTimestamp,
@@ -1731,20 +1782,39 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 		const plaintext = Buffer.from(proto.Message.encode(bundleMessage).finish())
 
-		const meta = await groupMetadata(groupJid)
 		const participantIds = (meta.participants || []).map(p => p.id).filter(Boolean)
 		let devices: any[] = []
 		try {
 			devices = await getUSyncDevices(participantIds, false, false)
 		} catch {}
 		const deviceJids = [...new Set((devices || []).map(d => d.jid).filter(Boolean))]
-		if (!deviceJids.length) {
-			deviceJids.push(...input.toJids)
+
+		// Get target-specific device JIDs for SenderKey distribution
+		const targetIdsArray = Array.from(targetParticipantJids)
+		let targetDevices: any[] = []
+		try {
+			targetDevices = await getUSyncDevices(targetIdsArray, false, false)
+		} catch {}
+
+		const skdmTargets = new Set<string>()
+		if (targetDevices && targetDevices.length) {
+			for (const d of targetDevices) {
+				if (d.jid) skdmTargets.add(d.jid)
+			}
+		}
+		if (!skdmTargets.size) {
+			for (const t of targetIdsArray) {
+				skdmTargets.add(t)
+			}
 		}
 
-		const skdmTargets = [...input.toJids]
+		const skdmTargetsList = Array.from(skdmTargets)
+		if (!deviceJids.length) {
+			deviceJids.push(...skdmTargetsList)
+		}
+
 		try {
-			await assertSessions(skdmTargets)
+			await assertSessions(skdmTargetsList)
 		} catch {}
 
 		const meLid = authState?.creds?.me?.lid
@@ -1769,7 +1839,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		}
 
 		const { nodes: toNodes, shouldIncludeDeviceIdentity: needDeviceIdentity } =
-			await createParticipantNodes(skdmTargets, senderKeyMsg, {
+			await createParticipantNodes(skdmTargetsList, senderKeyMsg, {
 				mediatype: 'group_history'
 			})
 
