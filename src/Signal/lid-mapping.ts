@@ -1,7 +1,7 @@
 import { LRUCache } from 'lru-cache'
 import type { LIDMapping, SignalKeyStoreWithTransaction } from '../Types'
 import type { ILogger } from '../Utils/logger'
-import { isHostedPnUser, isLidUser, isPnUser, jidDecode, jidNormalizedUser, WAJIDDomains } from '../WABinary'
+import { isHostedPnUser, isLidUser, isPnUser, jidDecode, jidNormalizedUser, storeLidPnMapping, WAJIDDomains } from '../WABinary'
 
 export class LIDMappingStore {
 	private readonly mappingCache = new LRUCache<string, string>({
@@ -37,10 +37,14 @@ export class LIDMappingStore {
 				continue
 			}
 
-			const lidDecoded = jidDecode(lid)
-			const pnDecoded = jidDecode(pn)
+			const actualLid = isLidUser(lid) ? lid : pn
+			const actualPn = isPnUser(pn) ? pn : lid
+			const lidDecoded = jidDecode(actualLid)
+			const pnDecoded = jidDecode(actualPn)
 			if (!lidDecoded || !pnDecoded) continue
+			if (!lidDecoded.user || !pnDecoded.user || lidDecoded.user === pnDecoded.user) continue
 
+			storeLidPnMapping(actualLid, actualPn)
 			validatedPairs.push({ pnUser: pnDecoded.user, lidUser: lidDecoded.user })
 		}
 
@@ -271,15 +275,16 @@ export class LIDMappingStore {
 		const pending: Array<{ lid: string; lidUser: string; decoded: ReturnType<typeof jidDecode> }> = []
 
 		const addResolvedPair = (lid: string, decoded: ReturnType<typeof jidDecode>, pnUser: string) => {
-			if (!pnUser || typeof pnUser !== 'string') {
+			if (!pnUser || typeof pnUser !== 'string' || pnUser === decoded?.user) {
 				return false
 			}
 
 			const lidDevice = decoded!.device !== undefined ? decoded!.device : 0
-			const pnJid = `${pnUser}:${lidDevice}@${
+			const pnJid = `${pnUser}${!!lidDevice ? `:${lidDevice}` : ''}@${
 				decoded!.domainType === WAJIDDomains.HOSTED_LID ? 'hosted' : 's.whatsapp.net'
 			}`
 
+			storeLidPnMapping(lid, pnJid)
 			this.logger.trace(`Found reverse mapping: ${lid} → ${pnJid}`)
 			successfulPairs[lid] = { lid, pn: pnJid }
 			return true

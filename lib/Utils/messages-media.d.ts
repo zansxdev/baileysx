@@ -15,6 +15,15 @@ export declare const getRawMediaUploadData: (media: WAMediaUpload, mediaType: Me
 }>;
 /** generates all the keys required to encrypt/decrypt & sign a media message */
 export declare function getMediaKeys(buffer: Uint8Array | string | null | undefined, mediaType: MediaType): Promise<MediaDecryptionKeyInfo>;
+export declare const isStandardWhatsAppImageBuffer: (buf: Buffer) => "image/jpeg" | "image/png" | null;
+export declare const normalizeImageUploadForWhatsApp: (media: WAMediaUpload, opts?: RequestInit & {
+    maxContentLength?: number;
+}, logger?: ILogger) => Promise<{
+    media: WAMediaUpload;
+    mimetype?: string;
+    width?: number;
+    height?: number;
+}>;
 export declare const extractImageThumb: (bufferOrFilePath: Readable | Buffer | string, width?: number) => Promise<{
     buffer: any;
     original: {

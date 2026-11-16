@@ -185,6 +185,7 @@ export const extractDeviceJids = (
 	excludeZeroDevices: boolean
 ) => {
 	const { user: myUser, device: myDevice } = jidDecode(myJid)!
+	const myLidUser = myLid ? jidDecode(myLid)?.user || myLid : ''
 
 	const extracted: FullJid[] = []
 
@@ -198,7 +199,7 @@ export const extractDeviceJids = (
 		for (const { id: device, keyIndex, isHosted } of deviceList) {
 			if (
 				(!excludeZeroDevices || device !== 0) && // if zero devices are not-excluded, or device is non zero
-				((myUser !== user && myLid !== user) || myDevice !== device) && // either different user or if me user, not this device
+				((myUser !== user && myLidUser !== user) || myDevice !== device) && // either different user or if me user, not this device
 				(device === 0 || !!keyIndex) // ensure that "key-index" is specified for "non-zero" devices, produces a bad req otherwise
 			) {
 				if (isHosted) {

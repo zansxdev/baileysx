@@ -31,7 +31,7 @@ import type { ILogger } from './logger'
 
 const getTmpFilesDirectory = () => tmpdir()
 
-const getImageProcessingLibrary = async () => {
+const getImageProcessingLibrary = async (): Promise<{ sharp?: any; jimp?: any }> => {
 	//@ts-ignore
 	const [jimp, sharp] = await Promise.all([import('jimp').catch(() => {}), import('sharp').catch(() => {})])
 
@@ -132,6 +132,104 @@ const extractVideoThumb = async (
 		})
 	})
 
+export const isStandardWhatsAppImageBuffer = (buf: Buffer): 'image/jpeg' | 'image/png' | null => {
+	if (!Buffer.isBuffer(buf) || buf.length < 8) return null
+	if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+		return 'image/jpeg'
+	}
+	if (
+		buf[0] === 0x89 &&
+		buf[1] === 0x50 &&
+		buf[2] === 0x4e &&
+		buf[3] === 0x47 &&
+		buf[4] === 0x0d &&
+		buf[5] === 0x0a &&
+		buf[6] === 0x1a &&
+		buf[7] === 0x0a
+	) {
+		return 'image/png'
+	}
+	return null
+}
+
+export const normalizeImageUploadForWhatsApp = async (
+	media: WAMediaUpload,
+	opts?: RequestInit & { maxContentLength?: number },
+	logger?: ILogger
+): Promise<{ media: WAMediaUpload; mimetype?: string; width?: number; height?: number }> => {
+	try {
+		let rawBuffer: Buffer | undefined
+		if (Buffer.isBuffer(media)) {
+			const stdMime = isStandardWhatsAppImageBuffer(media)
+			if (stdMime) {
+				return { media, mimetype: stdMime }
+			}
+			rawBuffer = media
+		} else if ('url' in media && media.url) {
+			const urlStr = media.url.toString()
+			if (!urlStr.startsWith('http://') && !urlStr.startsWith('https://') && !urlStr.startsWith('data:')) {
+				const fh = await fs.open(urlStr, 'r')
+				try {
+					const header = Buffer.alloc(16)
+					const { bytesRead } = await fh.read(header, 0, 16, 0)
+					const stdMime = isStandardWhatsAppImageBuffer(header.subarray(0, bytesRead))
+					if (stdMime) {
+						return { media, mimetype: stdMime }
+					}
+				} finally {
+					await fh.close()
+				}
+				rawBuffer = await fs.readFile(urlStr)
+			} else {
+				const { stream } = await getStream(media, opts)
+				rawBuffer = await toBuffer(stream)
+				const stdMime = isStandardWhatsAppImageBuffer(rawBuffer)
+				if (stdMime) {
+					return { media: rawBuffer, mimetype: stdMime }
+				}
+			}
+		} else if ('stream' in media && media.stream) {
+			rawBuffer = await toBuffer(media.stream)
+			const stdMime = isStandardWhatsAppImageBuffer(rawBuffer)
+			if (stdMime) {
+				return { media: rawBuffer, mimetype: stdMime }
+			}
+		}
+
+		if (!rawBuffer || !rawBuffer.length) {
+			return { media }
+		}
+
+		const lib = (await getImageProcessingLibrary().catch(() => null)) as { sharp?: any; jimp?: any } | null
+		const sharpFn =
+			lib && lib.sharp
+				? typeof lib.sharp?.default === 'function'
+					? lib.sharp.default
+					: typeof lib.sharp === 'function'
+						? lib.sharp
+						: null
+				: null
+
+		if (sharpFn) {
+			const pipeline = sharpFn(rawBuffer, { failOn: 'none' }).rotate()
+			const { data: jpegBuffer, info } = await pipeline
+				.jpeg({ quality: 92, mozjpeg: true })
+				.toBuffer({ resolveWithObject: true })
+			logger?.debug({ width: info?.width, height: info?.height }, 'normalized non-standard image to JPEG for WhatsApp')
+			return {
+				media: jpegBuffer,
+				mimetype: 'image/jpeg',
+				width: info?.width,
+				height: info?.height
+			}
+		}
+		return { media: rawBuffer }
+	} catch (err) {
+		logger?.debug({ err }, 'failed to normalize image upload, falling back to original media')
+		return { media }
+	}
+}
+
 export const extractImageThumb = async (bufferOrFilePath: Readable | Buffer | string, width = 32) => {
 	// TODO: Move entirely to sharp, removing jimp as it supports readable streams
 	// This will have positive speed and performance impacts as well as minimizing RAM usage.
@@ -139,17 +237,33 @@ export const extractImageThumb = async (bufferOrFilePath: Readable | Buffer | st
 		bufferOrFilePath = await toBuffer(bufferOrFilePath)
 	}
 
-	const lib = await getImageProcessingLibrary()
-	if ('sharp' in lib && typeof lib.sharp?.default === 'function') {
-		const img = lib.sharp.default(bufferOrFilePath)
-		const dimensions = await img.metadata()
+	const lib = (await getImageProcessingLibrary()) as { sharp?: any; jimp?: any }
+	const sharpFn =
+		lib && lib.sharp
+			? typeof lib.sharp?.default === 'function'
+				? lib.sharp.default
+				: typeof lib.sharp === 'function'
+					? lib.sharp
+					: null
+			: null
 
-		const buffer = await img.resize(width).jpeg({ quality: 50 }).toBuffer()
+	if (sharpFn) {
+		const img = sharpFn(bufferOrFilePath, { failOn: 'none' })
+		const dimensions = await img.metadata()
+		const isSwapped = typeof dimensions.orientation === 'number' && dimensions.orientation >= 5 && dimensions.orientation <= 8
+		const origWidth = isSwapped ? dimensions.height : dimensions.width
+		const origHeight = isSwapped ? dimensions.width : dimensions.height
+
+		const buffer = await sharpFn(bufferOrFilePath, { failOn: 'none' })
+			.rotate()
+			.resize(width)
+			.jpeg({ quality: 50 })
+			.toBuffer()
 		return {
 			buffer,
 			original: {
-				width: dimensions.width,
-				height: dimensions.height
+				width: origWidth,
+				height: origHeight
 			}
 		}
 	} else if ('jimp' in lib && typeof lib.jimp?.Jimp === 'object') {
@@ -161,6 +275,22 @@ export const extractImageThumb = async (bufferOrFilePath: Readable | Buffer | st
 		const buffer = await jimp
 			.resize({ w: width, mode: lib.jimp.ResizeStrategy.BILINEAR })
 			.getBuffer('image/jpeg', { quality: 50 })
+		return {
+			buffer,
+			original: dimensions
+		}
+	} else if ('jimp' in lib && (typeof (lib.jimp as any)?.read === 'function' || typeof (lib.jimp as any)?.default?.read === 'function')) {
+		const JimpLegacy = typeof (lib.jimp as any)?.read === 'function' ? (lib.jimp as any) : (lib.jimp as any).default
+		const jimp = await JimpLegacy.read(bufferOrFilePath)
+		const dimensions = {
+			width: jimp.bitmap?.width || jimp.getWidth?.(),
+			height: jimp.bitmap?.height || jimp.getHeight?.()
+		}
+		const autoVal = JimpLegacy.AUTO ?? -1
+		const buffer = await jimp
+			.resize(width, autoVal)
+			.quality(50)
+			.getBufferAsync(JimpLegacy.MIME_JPEG || 'image/jpeg')
 		return {
 			buffer,
 			original: dimensions

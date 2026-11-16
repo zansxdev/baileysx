@@ -90,7 +90,7 @@ export const DEFAULT_CONNECTION_CONFIG: SocketConfig = {
 	enableAutoSessionRecreation: true,
 	enableRecentMessageCache: true,
 	bypassViewOnce: false,
-	aiChat: true,
+	aiChat: false,
 	aiBotName: undefined as string | undefined,
 	aiBotJid: undefined as string | undefined,
 

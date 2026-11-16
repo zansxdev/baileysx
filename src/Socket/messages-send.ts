@@ -74,7 +74,8 @@ import {
 	jidToLid,
 	type JidWithDevice,
 	PSA_WID,
-	S_WHATSAPP_NET
+	S_WHATSAPP_NET,
+	storeLidPnMapping
 } from '../WABinary'
 import { USyncQuery, USyncUser } from '../WAUSync'
 import { makeNewsletterSocket } from './newsletter'
@@ -478,38 +479,42 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		}
 
 		if (jidsRequiringFetch.length) {
-			// LID if mapped, otherwise original
+			// LID if mapped, otherwise fallback to original PN so unmapped contacts still get E2E sessions
+			const pnJids = jidsRequiringFetch.filter(jid => !!isPnUser(jid) || !!isHostedPnUser(jid))
+			const lidMappings = pnJids.length ? (await signalRepository.lidMapping.getLIDsForPNs(pnJids)) || [] : []
+			const mappedPnSet = new Set(lidMappings.map(a => a.pn))
 			const wireJids = [
-				...jidsRequiringFetch.filter(jid => !!isLidUser(jid) || !!isHostedLidUser(jid)),
-				...(
-					(await signalRepository.lidMapping.getLIDsForPNs(
-						jidsRequiringFetch.filter(jid => !!isPnUser(jid) || !!isHostedPnUser(jid))
-					)) || []
-				).map(a => a.lid)
+				...new Set([
+					...jidsRequiringFetch.filter(jid => !!isLidUser(jid) || !!isHostedLidUser(jid)),
+					...lidMappings.map(a => a.lid),
+					...pnJids.filter(jid => !mappedPnSet.has(jid))
+				])
 			]
 
-			logger.debug({ jidsRequiringFetch, wireJids }, 'fetching sessions')
-			const result = await query({
-				tag: 'iq',
-				attrs: {
-					xmlns: 'encrypt',
-					type: 'get',
-					to: S_WHATSAPP_NET
-				},
-				content: [
-					{
-						tag: 'key',
-						attrs: {},
-						content: wireJids.map(jid => {
-							const attrs: { [key: string]: string } = { jid }
-							if (force) attrs.reason = 'identity'
-							return { tag: 'user', attrs }
-						})
-					}
-				]
-			})
-			await parseAndInjectE2ESessions(result, signalRepository)
-			didFetchNewSession = true
+			if (wireJids.length) {
+				logger.debug({ jidsRequiringFetch, wireJids }, 'fetching sessions')
+				const result = await query({
+					tag: 'iq',
+					attrs: {
+						xmlns: 'encrypt',
+						type: 'get',
+						to: S_WHATSAPP_NET
+					},
+					content: [
+						{
+							tag: 'key',
+							attrs: {},
+							content: wireJids.map(jid => {
+								const attrs: { [key: string]: string } = { jid }
+								if (force) attrs.reason = 'identity'
+								return { tag: 'user', attrs }
+							})
+						}
+					]
+				})
+				await parseAndInjectE2ESessions(result, signalRepository)
+				didFetchNewSession = true
+			}
 		}
 
 		return didFetchNewSession
@@ -594,7 +599,15 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					const mutexKey = jid
 
 					const node = await encryptionMutex.mutex(mutexKey, async () => {
-						const { type, ciphertext } = await signalRepository.encryptMessage({ jid, data: bytes })
+						let encResult: { type: 'pkmsg' | 'msg'; ciphertext: Uint8Array }
+						try {
+							encResult = await signalRepository.encryptMessage({ jid, data: bytes })
+						} catch (firstErr) {
+							logger.warn({ jid, err: firstErr }, 'Initial encryptMessage failed, force-refreshing session and retrying')
+							await assertSessions([jid], true)
+							encResult = await signalRepository.encryptMessage({ jid, data: bytes })
+						}
+						const { type, ciphertext } = encResult
 
 						if (type === 'pkmsg') {
 							shouldIncludeDeviceIdentity = true
@@ -657,12 +670,19 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			message?.viewOnceMessageV2?.message?.interactiveMessage ||
 			(message as any)?.viewOnceMessageV2Extension?.message?.interactiveMessage
 		)
-		const isAiDisabled = isInteractive || ai === false || (options as any)?.aiChat === false || (config.aiChat === false && ai !== true)
-		if (isPriv && isAiDisabled && message?.messageContextInfo?.supportPayload) {
+		const isAiEnabled =
+			!isInteractive &&
+			(ai !== undefined
+				? Boolean(ai)
+				: (options as any)?.aiChat !== undefined
+					? (options as any).aiChat === true
+					: config.aiChat === true)
+		if (isPriv && !isAiEnabled && message?.messageContextInfo?.supportPayload) {
 			delete message.messageContextInfo.supportPayload
 		}
-		const isAiPayload = !isAiDisabled && !!message?.messageContextInfo?.supportPayload?.includes('"is_ai_message":true')
-		if (isPriv && !isAiDisabled && (ai || isAiPayload)) {
+		const canSendBotNode = !isPriv || isJidBot(jid) || isJidMetaAI(jid)
+		const isAiPayload = isAiEnabled && !!message?.messageContextInfo?.supportPayload?.includes('"is_ai_message":true')
+		if (isAiEnabled && canSendBotNode && (ai || isAiPayload)) {
 			additionalNodes = additionalNodes ? [...additionalNodes] : []
 			const hasBot = additionalNodes.some(n => n.tag === 'bot' && n.attrs?.biz_bot === '1')
 			if (!hasBot) {
@@ -676,7 +696,14 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		}
 
 		if (!isJidGroup(jid) && isLidUser(jid)) {
-			const mappedPn = getPnForLid(jid)
+			let mappedPn = getPnForLid(jid)
+			if (!mappedPn) {
+				const resolvedPn = await signalRepository.lidMapping.getPNForLID(jid).catch(() => null)
+				if (resolvedPn) {
+					mappedPn = jidNormalizedUser(resolvedPn)
+					storeLidPnMapping(jid, mappedPn)
+				}
+			}
 			if (mappedPn) {
 				jid = mappedPn
 			}
@@ -1196,7 +1223,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 				if (isJidGroup(destinationJid)) {
 					stanza.attrs.to = destinationJid
 					stanza.attrs.participant = participant.jid
-				} else if (areJidsSameUser(participant.jid, meId)) {
+				} else if (areJidsSameUser(participant.jid, meId) || (!!meLid && areJidsSameUser(participant.jid, meLid))) {
 					stanza.attrs.to = participant.jid
 					stanza.attrs.recipient = destinationJid
 				} else {
@@ -1788,7 +1815,8 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 				const isPrivChat = isPrivateChat(jid)
 				const isExplicitAi = (content as any)?.ai !== undefined ? (content as any).ai : (options as any)?.ai
-				const isAiChatEnabled = config.aiChat !== false
+				const isAiChatEnabled =
+					(options as any)?.aiChat !== undefined ? (options as any).aiChat === true : config.aiChat === true
 				const normMsg = normalizeMessageContent(fullMsg.message)
 				const isInteractive = Boolean(
 					normMsg?.interactiveMessage ||
@@ -1799,13 +1827,14 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					fullMsg.message?.viewOnceMessageV2?.message?.interactiveMessage ||
 					(fullMsg.message as any)?.viewOnceMessageV2Extension?.message?.interactiveMessage
 				)
+				const canSendBotNode = !isPrivChat || isJidBot(jid) || isJidMetaAI(jid)
 				const shouldAddAi =
 					!isInteractive &&
 					(isExplicitAi !== undefined
 						? Boolean(isExplicitAi)
-						: (isAiChatEnabled && isPrivChat))
+						: (isAiChatEnabled && !isPrivChat))
 
-				if (shouldAddAi && isPrivChat) {
+				if (shouldAddAi && canSendBotNode) {
 					fullMsg.message!.messageContextInfo = fullMsg.message!.messageContextInfo || {}
 					fullMsg.message!.messageContextInfo.supportPayload = BIZ_BOT_SUPPORT_PAYLOAD
 					const hasBot = additionalNodes.some(n => n.tag === 'bot' && n.attrs?.biz_bot === '1')

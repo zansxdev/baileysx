@@ -47,7 +47,8 @@ import {
 	getAudioDuration,
 	getAudioWaveform,
 	getRawMediaUploadData,
-	type MediaDownloadOptions
+	type MediaDownloadOptions,
+	normalizeImageUploadForWhatsApp
 } from './messages-media'
 import { shouldIncludeReportingToken } from './reporting-utils'
 
@@ -232,9 +233,29 @@ export const prepareWAMessageMedia = async (
 		return obj
 	}
 
+	if (mediaType === 'image' && !(options.mediaTypeOverride && options.mediaTypeOverride !== 'image')) {
+		const normalizedImg = await normalizeImageUploadForWhatsApp(uploadData.media, options.options, logger)
+		uploadData.media = normalizedImg.media
+		if (normalizedImg.mimetype) {
+			uploadData.mimetype = normalizedImg.mimetype
+		}
+		if (normalizedImg.width && normalizedImg.height && !uploadData.width && !uploadData.height) {
+			uploadData.width = normalizedImg.width
+			uploadData.height = normalizedImg.height
+		}
+	}
+
+	const hasValidThumbnail =
+		uploadData['jpegThumbnail'] !== undefined &&
+		uploadData['jpegThumbnail'] !== null &&
+		(typeof uploadData['jpegThumbnail'] === 'string'
+			? uploadData['jpegThumbnail'].length > 0
+			: (uploadData['jpegThumbnail'] as Uint8Array).length > 0)
+
 	const requiresDurationComputation = mediaType === 'audio' && typeof uploadData.seconds === 'undefined'
 	const requiresThumbnailComputation =
-		(mediaType === 'image' || mediaType === 'video') && typeof uploadData['jpegThumbnail'] === 'undefined'
+		(mediaType === 'image' || mediaType === 'video') &&
+		(!hasValidThumbnail || (mediaType === 'image' && (!uploadData.width || !uploadData.height)))
 	const requiresWaveformProcessing =
 		mediaType === 'audio' && uploadData.ptt === true && typeof uploadData.waveform === 'undefined'
 	const requiresAudioBackground = (options.backgroundColor || (uploadData as any)?.backgroundArgb) && mediaType === 'audio' && uploadData.ptt === true
@@ -269,7 +290,9 @@ export const prepareWAMessageMedia = async (
 						mediaType as 'image' | 'video',
 						options
 					)
-					uploadData.jpegThumbnail = thumbnail
+					if (!hasValidThumbnail && thumbnail) {
+						uploadData.jpegThumbnail = Buffer.from(thumbnail, 'base64') as any
+					}
 					if (!uploadData.width && originalImageDimensions) {
 						uploadData.width = originalImageDimensions.width
 						uploadData.height = originalImageDimensions.height
@@ -318,6 +341,7 @@ export const prepareWAMessageMedia = async (
 
 	const obj = WAProto.Message.fromObject({
 		[`${mediaType}Message`]: MessageTypeProto[mediaType as keyof typeof MessageTypeProto].fromObject({
+			...uploadData,
 			url: mediaUrl,
 			directPath,
 			mediaKey,
@@ -325,7 +349,6 @@ export const prepareWAMessageMedia = async (
 			fileSha256,
 			fileLength,
 			mediaKeyTimestamp: unixTimestampSeconds(),
-			...uploadData,
 			waveform: uploadData.waveform ? new Uint8Array(uploadData.waveform) : undefined,
 			media: undefined
 		} as any)
@@ -657,7 +680,7 @@ export const generateWAMessageContent = async (
 	message: AnyMessageContent,
 	options: MessageContentGenerationOptions
 ) => {
-	const anyMsg = message as any
+	let anyMsg = message as any
 	let m: WAMessageContent = {}
 
 	if (hasNonNullishProperty(message, 'raw')) {
@@ -954,6 +977,9 @@ export const generateWAMessageContent = async (
 			}
 		}
 	} else {
+		if (anyMsg.audio && anyMsg.viewOnce && anyMsg.ptt === undefined) {
+			anyMsg = { ...anyMsg, ptt: true }
+		}
 		m = await prepareWAMessageMedia(anyMsg, options)
 	}
 
@@ -1091,17 +1117,14 @@ export const generateWAMessageContent = async (
 	}
 
 
-	if (hasOptionalProperty(message, 'viewOnce') && !!message.viewOnce && !m.viewOnceMessage && !m.viewOnceMessageV2) {
-		m = { viewOnceMessage: { message: m } }
-	}
-
 	if (
 		(hasOptionalProperty(message, 'mentions') && (message as any).mentions?.length) ||
 		(hasOptionalProperty(message, 'mentionAll') && (message as any).mentionAll)
 	) {
-		const messageType = Object.keys(m)[0]! as Extract<keyof proto.IMessage, MessageWithContextInfo>
-		const key = m[messageType]
-		if (key && 'contextInfo' in key) {
+		const targetMsg = normalizeMessageContent(m) || m
+		const messageType = getContentType(targetMsg) as Extract<keyof proto.IMessage, MessageWithContextInfo> | undefined
+		const key = messageType ? targetMsg[messageType] : undefined
+		if (key && typeof key === 'object' && 'contextInfo' in key) {
 			key.contextInfo = key.contextInfo || {}
 			if ((message as any).mentions?.length) {
 				key.contextInfo.mentionedJid = (message as any).mentions
@@ -1110,11 +1133,51 @@ export const generateWAMessageContent = async (
 			if ((message as any).mentionAll) {
 				key.contextInfo.nonJidMentions = 1
 			}
-		} else if (key!) {
-			key.contextInfo = {
+		} else if (key && typeof key === 'object') {
+			;(key as any).contextInfo = {
 				mentionedJid: (message as any).mentions,
 				nonJidMentions: (message as any).mentionAll ? 1 : 0
 			}
+		}
+	}
+
+	if (hasOptionalProperty(message, 'contextInfo') && !!message.contextInfo) {
+		if ((m as any)?.botForwardedMessage?.message?.richResponseMessage) {
+			const rich = (m as any).botForwardedMessage.message.richResponseMessage
+			rich.contextInfo = { ...rich.contextInfo, ...message.contextInfo }
+		} else {
+			const targetMsg = normalizeMessageContent(m) || m
+			const messageType = getContentType(targetMsg) as Extract<keyof proto.IMessage, MessageWithContextInfo> | undefined
+			const key = messageType ? targetMsg[messageType] : undefined
+			if (key && typeof key === 'object' && 'contextInfo' in key && !!key.contextInfo) {
+				key.contextInfo = { ...key.contextInfo, ...message.contextInfo }
+			} else if (key && typeof key === 'object') {
+				;(key as any).contextInfo = message.contextInfo
+			}
+		}
+	}
+
+	if (
+		hasOptionalProperty(message, 'viewOnce') &&
+		!!message.viewOnce &&
+		!m.viewOnceMessage &&
+		!m.viewOnceMessageV2 &&
+		!m.viewOnceMessageV2Extension
+	) {
+		if (m.audioMessage) {
+			m.audioMessage.viewOnce = true
+			if (m.audioMessage.ptt === undefined || m.audioMessage.ptt === null) {
+				m.audioMessage.ptt = true
+			}
+			m = { viewOnceMessageV2Extension: { message: m } }
+		} else if (m.imageMessage) {
+			m.imageMessage.viewOnce = true
+			m = { viewOnceMessageV2: { message: m } }
+		} else if (m.videoMessage) {
+			m.videoMessage.viewOnce = true
+			m = { viewOnceMessageV2: { message: m } }
+		} else {
+			m = { viewOnceMessageV2: { message: m } }
 		}
 	}
 
@@ -1125,21 +1188,6 @@ export const generateWAMessageContent = async (
 				editedMessage: m,
 				timestampMs: Date.now(),
 				type: WAProto.Message.ProtocolMessage.Type.MESSAGE_EDIT
-			}
-		}
-	}
-
-	if (hasOptionalProperty(message, 'contextInfo') && !!message.contextInfo) {
-		if ((m as any)?.botForwardedMessage?.message?.richResponseMessage) {
-			const rich = (m as any).botForwardedMessage.message.richResponseMessage
-			rich.contextInfo = { ...rich.contextInfo, ...message.contextInfo }
-		} else {
-			const messageType = Object.keys(m)[0]! as Extract<keyof proto.IMessage, MessageWithContextInfo>
-			const key = m[messageType]
-			if ('contextInfo' in key! && !!key.contextInfo) {
-				key.contextInfo = { ...key.contextInfo, ...message.contextInfo }
-			} else if (key!) {
-				key.contextInfo = message.contextInfo
 			}
 		}
 	}
@@ -1163,7 +1211,7 @@ export const generateWAMessageContent = async (
 
 	const isPrivChat = isPrivateChat(options.jid)
 	const isExplicitAi = typeof (message as any)?.ai !== 'undefined' ? (message as any).ai : options.ai
-	const isAiChatEnabled = options.aiChat !== false
+	const isAiChatEnabled = options.aiChat === true
 
 	const normMsg = normalizeMessageContent(m)
 	const isInteractive = Boolean(
@@ -1367,8 +1415,27 @@ export const generateWAMessageFromContent = (
 		aiBotJid: (options as any)?.aiBotJid
 	})
 
-	if (message && innerMessage && key && (message as any)[key]) {
-		(message as any)[key] = innerMessage[key]
+	if (message && innerMessage && key) {
+		if ((message as any)[key]) {
+			;(message as any)[key] = innerMessage[key]
+		} else {
+			const wrapper =
+				message.viewOnceMessage ||
+				message.viewOnceMessageV2 ||
+				message.viewOnceMessageV2Extension ||
+				message.ephemeralMessage ||
+				message.documentWithCaptionMessage
+			if (wrapper?.message) {
+				;(wrapper.message as any)[key] = innerMessage[key]
+			}
+		}
+	}
+
+	if (shouldIncludeReportingToken(message)) {
+		message.messageContextInfo = message.messageContextInfo || {}
+		if (!message.messageContextInfo.messageSecret) {
+			message.messageContextInfo.messageSecret = randomBytes(32)
+		}
 	}
 
 	message = WAProto.Message.create(message)
@@ -1402,7 +1469,12 @@ export const generateWAMessage = async (jid: string, content: AnyMessageContent,
 export const getContentType = (content: proto.IMessage | undefined) => {
 	if (content) {
 		const keys = Object.keys(content)
-		const key = keys.find(k => (k === 'conversation' || k.includes('Message')) && k !== 'senderKeyDistributionMessage')
+		const key = keys.find(
+			k =>
+				(k === 'conversation' || k.includes('Message')) &&
+				k !== 'senderKeyDistributionMessage' &&
+				k !== 'messageContextInfo'
+		)
 		return key as keyof typeof content
 	}
 }
