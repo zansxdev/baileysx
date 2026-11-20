@@ -1650,6 +1650,25 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 						// Check if this is eligible for placeholder resend (matching WA Web filters).
 						const unavailableNode = getBinaryNodeChild(node, 'unavailable')
 						const unavailableType = unavailableNode?.attrs?.type
+
+						// If the sender dropped this recipient, they need our prekey to establish
+						// session and distribute group sender key. Request retry with our keys!
+						if (unavailableType === 'sender_drop') {
+							logger.info(
+								{ msgId: msg.key.id, from: node.attrs.from, participant: node.attrs.participant },
+								'received sender_drop, requesting retry with prekey from sender'
+							)
+							await retryMutex.mutex(async () => {
+								try {
+									if (!ws.isOpen) return
+									await sendRetryRequest(node, true)
+								} catch (err) {
+									logger.error({ err }, 'Failed to send retry for sender_drop')
+								}
+							})
+							return
+						}
+
 						if (
 							unavailableType === 'bot_unavailable_fanout' ||
 							unavailableType === 'hosted_unavailable_fanout' ||
