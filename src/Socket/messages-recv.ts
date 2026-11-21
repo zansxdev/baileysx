@@ -1656,8 +1656,11 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 						if (unavailableType === 'sender_drop') {
 							logger.info(
 								{ msgId: msg.key.id, from: node.attrs.from, participant: node.attrs.participant },
-								'received sender_drop, requesting retry with prekey from sender'
+								'received sender_drop, clearing sender-key-memory & requesting retry with prekey from sender'
 							)
+							if (node.attrs.from) {
+								await authState.keys.set({ 'sender-key-memory': { [node.attrs.from]: null } })
+							}
 							await retryMutex.mutex(async () => {
 								try {
 									if (!ws.isOpen) return
@@ -1666,7 +1669,7 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 									logger.error({ err }, 'Failed to send retry for sender_drop')
 								}
 							})
-							return
+							// Fall through to request placeholder resend from primary device (:0)
 						}
 
 						if (

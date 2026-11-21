@@ -809,14 +809,23 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 				extraAttrs['decrypt-fail'] = 'hide' // todo: expand for reactions and other types
 			}
 
+			let groupSenderKeyMap: Record<string, boolean> | undefined
 			if (isGroupOrStatus && !isRetryResend) {
-				const [groupData, senderKeyMap] = await Promise.all([
+				const [groupData, senderKeyMapResult] = await Promise.all([
 					(async () => {
 						let groupData = useCachedGroupMetadata && cachedGroupMetadata ? await cachedGroupMetadata(jid) : undefined // todo: should we rely on the cache specially if the cache is outdated and the metadata has new fields?
 						if (groupData && Array.isArray(groupData?.participants)) {
 							logger.trace({ jid, participants: groupData.participants.length }, 'using cached group metadata')
 						} else if (!isStatus) {
-							groupData = await groupMetadata(jid) // TODO: start storing group participant list + addr mode in Signal & stop relying on this
+							try {
+								groupData = await groupMetadata(jid)
+							} catch (err: any) {
+								if (err?.message?.includes('forbidden') || err?.output?.statusCode === 403) {
+									const all = await (sock as any).groupFetchAllParticipating?.().catch(() => ({}))
+									groupData = all?.[jid]
+								}
+								if (!groupData) throw err
+							}
 						}
 
 						return groupData
@@ -832,6 +841,8 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 						return {}
 					})()
 				])
+				groupSenderKeyMap = senderKeyMapResult
+				const senderKeyMap = groupSenderKeyMap
 
 				const participantsList = groupData ? groupData.participants.map(p => p.id) : []
 
@@ -922,10 +933,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 						deviceJid !== meId &&
 						(!meLid || deviceJid !== meLid)
 					) {
-						//todo: revamp all this logic
-						// the goal is to follow with what I said above for each group, and instead of a true false map of ids, we can set an array full of those the app has already sent pkmsgs
 						senderKeyRecipients.push(deviceJid)
-						senderKeyMap[deviceJid] = true
 					}
 				}
 
@@ -946,6 +954,14 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					shouldIncludeDeviceIdentity = shouldIncludeDeviceIdentity || result.shouldIncludeDeviceIdentity
 
 					participants.push(...result.nodes)
+
+					// PR #2891: Record sender-key memory ONLY for devices that actually received an SKDM node
+					for (const node of result.nodes) {
+						const targetJid = node.attrs?.jid || node.attrs?.to
+						if (targetJid) {
+							senderKeyMap[targetJid] = true
+						}
+					}
 				}
 
 				if (isStatus) {
@@ -961,14 +977,11 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					}, 'status broadcast relay info')
 				}
 
-
 				binaryNodeContent.push({
 					tag: 'enc',
 					attrs: { v: '2', type: 'skmsg', ...extraAttrs },
 					content: ciphertext
 				})
-
-				await authState.keys.set({ 'sender-key-memory': { [jid]: senderKeyMap } })
 			} else {
 				// ADDRESSING CONSISTENCY: Match own identity to conversation context
 				// TODO: investigate if this is true
@@ -1315,6 +1328,10 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			logger.debug({ msgId }, `sending message to ${participants.length} devices`)
 
 			await sendNode(stanza)
+
+			if (groupSenderKeyMap && Object.keys(groupSenderKeyMap).length > 0) {
+				await authState.keys.set({ 'sender-key-memory': { [jid]: groupSenderKeyMap } })
+			}
 
 			// Fire-and-forget: issue our token to the contact AFTER message send.
 			// WA Web skips protocol messages and PSA/bot contacts (TcTokenChatAction: isRegularUser)

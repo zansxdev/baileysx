@@ -68,6 +68,7 @@ export function makeLibSignalRepository(
 		const { [senderNameStr]: senderKey } = await auth.keys.get('sender-key', [senderNameStr])
 		if (!senderKey) {
 			await storage.storeSenderKey(senderName, new SenderKeyRecord())
+			await auth.keys.set({ 'sender-key-memory': { [group]: null } })
 		}
 
 		const skdm = await new GroupSessionBuilder(storage).create(senderName)
