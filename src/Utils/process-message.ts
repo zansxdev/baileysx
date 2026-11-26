@@ -122,23 +122,24 @@ async function storeTcTokensFromHistorySync(
 export const cleanMessage = (message: WAMessage, meId: string, meLid: string, bypassViewOnce?: boolean) => {
 	// bypass view once messages
 	if (bypassViewOnce) {
-		if (message.message?.viewOnceMessage?.message) {
-			message.message = message.message.viewOnceMessage.message
-			const type = getContentType(message.message)
-			if (type && message.message[type]) {
-				(message.message[type] as any).viewOnce = false
+		const voInner =
+			message.message?.viewOnceMessage?.message ||
+			message.message?.viewOnceMessageV2?.message ||
+			message.message?.viewOnceMessageV2Extension?.message
+		if (voInner) {
+			const rawMsgAny = message as any
+			if (message.key) {
+				const keyAny = message.key as any
+				keyAny.isViewOnce = true
 			}
-		} else if (message.message?.viewOnceMessageV2?.message) {
-			message.message = message.message.viewOnceMessageV2.message
+			rawMsgAny.isViewOnce = true
+			rawMsgAny._isViewOnce = true
+			message.message = voInner
 			const type = getContentType(message.message)
 			if (type && message.message[type]) {
-				(message.message[type] as any).viewOnce = false
-			}
-		} else if (message.message?.viewOnceMessageV2Extension?.message) {
-			message.message = message.message.viewOnceMessageV2Extension.message
-			const type = getContentType(message.message)
-			if (type && message.message[type]) {
-				(message.message[type] as any).viewOnce = false
+				const innerMedia = message.message[type] as any
+				innerMedia._viewOnce = true
+				innerMedia.viewOnce = false
 			}
 		}
 	}

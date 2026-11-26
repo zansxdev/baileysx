@@ -283,7 +283,10 @@ export const decryptMessageNode = (
 						fullMessage.verifiedBizName = details.verifiedName
 					}
 
-					if (tag === 'unavailable' && attrs.type === 'view_once') {
+					if (
+						tag === 'unavailable' &&
+						(attrs.type === 'view_once' || attrs.type === 'view_once_unavailable_fanout')
+					) {
 						fullMessage.key.isViewOnce = true // TODO: remove from here and add a STUB TYPE
 					}
 
